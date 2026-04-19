@@ -1,13 +1,22 @@
 # PRD — Private Nano Banana Playground
 
 ## Document Status
-- **Status:** Draft v1
+- **Status:** Draft v1, later superseded in part by approved multi-provider implementation decisions
 - **Owner:** Hipson
 - **Audience:** AI coding model / engineer implementing the MVP
 - **Product Type:** Private single-user web app for rapid image generation tests
 
+## Current Direction Note
+
+This document captures the original MVP intent. The currently approved repo direction is broader:
+- `Google Gemini` and `FAL` are both treated as supported providers
+- the visible UI is no longer limited to three Google-facing model choices
+- the provider abstraction described in this PRD remains valid and is now used for real multi-provider routing
+
+When this document conflicts with the codebase, treat the current implementation plus repo-level guidance as the active source of truth.
+
 ## 1. Product Summary
-Build a private web playground for Google Gemini image models that behaves as closely as practical to the fal.ai playground pattern shown in the reference screenshot.
+Build a private web playground for image models that behaves as closely as practical to the fal.ai playground pattern shown in the reference screenshot.
 
 The app is a fast testing tool for one user. Its purpose is to let the user:
 - paste a ready-made prompt,
@@ -23,7 +32,7 @@ The app is a fast testing tool for one user. Its purpose is to let the user:
 The app is **not** a prompt-writing assistant. It is a thin execution playground.
 
 ## 2. Problem Statement
-Existing playgrounds provide the desired fast testing UX, but this project needs a private version focused on Gemini image models and future extensibility.
+Existing playgrounds provide the desired fast testing UX, but this project needs a private version focused on rapid model testing and future extensibility.
 
 The user wants a tool that:
 - feels familiar and low-friction,
@@ -37,7 +46,7 @@ The user wants a tool that:
 1. Reproduce the core fal.ai-style playground interaction pattern.
 2. Support raw prompt input with no prompt assistance.
 3. Support `txt>img` and `img>img` in one screen.
-4. Expose three visible model choices in the UI:
+4. Expose a small visible model set in the UI, starting from:
    - **Nano Banana 2 — Fast**
    - **Nano Banana 2 — Thinking**
    - **Nano Banana Pro**
@@ -100,10 +109,16 @@ The MVP must **not** include:
 
 ## 7. Supported Model Experience
 ### User-Facing Options
-The UI must display exactly these three model options in MVP:
+The original MVP target was exactly these three model options:
 1. **Nano Banana 2 — Fast**
 2. **Nano Banana 2 — Thinking**
 3. **Nano Banana Pro**
+
+### Current Approved Scope
+The current implementation may expose additional provider-backed models as long as:
+- the UI model list stays intentionally small,
+- the provider abstraction remains clean,
+- model capability differences are encoded in the registry layer.
 
 ### Internal Mapping Requirement
 The implementation must support a model registry layer so that user-facing labels are mapped internally to provider-specific model IDs and settings.
@@ -114,7 +129,7 @@ The expected MVP behavior is:
 - **Nano Banana Pro** → Gemini 3 Pro Image model
 
 ### Important Constraint
-The visible UI must present three choices even if two of them map to the same provider model with different configuration presets.
+The visible UI should remain curated even if multiple entries map to the same provider model with different presets.
 
 ## 8. Supported Modes
 The app must support two generation modes:
@@ -142,7 +157,7 @@ The left panel must contain:
    - `txt>img`
    - `img>img`
 2. **Model selector**
-   - 3 visible options only
+   - a curated visible option set only
 3. **Prompt textarea**
    - one large raw prompt box
    - no extra prompt-related helper UI
@@ -330,7 +345,8 @@ The MVP is complete when all of the following are true:
 2. The user can paste a raw prompt into one textarea.
 3. The UI contains no prompt-helper, prompt-rewrite, or prompt-suggestion features.
 4. The user can switch between `txt>img` and `img>img`.
-5. The user can select exactly one of three visible model options:
+5. The user can select exactly one visible model option from the curated model list.
+   The original MVP baseline list was:
    - Nano Banana 2 — Fast
    - Nano Banana 2 — Thinking
    - Nano Banana Pro
@@ -372,4 +388,3 @@ The feature set is done when:
 - the UI remains intentionally minimal,
 - raw prompt input is preserved without app-side prompt manipulation,
 - the internal architecture is ready for future extension without major refactor.
-
