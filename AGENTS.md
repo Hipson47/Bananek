@@ -20,22 +20,31 @@ The default user-facing workflow is:
 
 The raw prompt playground remains allowed only as an internal/admin workflow.
 
+## Current Filesystem Reality
+
+- Treat the current filesystem snapshot as the primary truth for what exists now.
+- The current working tree is documentation-heavy and includes frontend tooling/config files, but the `src/` application tree is currently missing from the filesystem snapshot.
+- If a document describes code, tests, folders, or infrastructure that are not present in the filesystem, do not treat them as implemented.
+- If git metadata or earlier docs suggest missing code once existed, treat that as historical or planned context, not current filesystem reality.
+
 ## Read Order
 
 Agents should build context in this order:
 1. `AGENTS.md`
 2. `docs/README.md`
 3. `docs/working-memory.md`
-4. actual code, tests, configs
+4. actual filesystem, code, tests, configs
 5. `docs/product-strategy-report.md`
 6. older docs only if still needed
 
 ## Repo Reality Rules
 
-- Trust code and tests over docs.
+- Trust filesystem reality first, then code/tests/config evidence.
 - Treat strategy docs as planning artifacts, not executable truth.
 - If a doc conflicts with code, call it out explicitly and update the doc if part of the task.
 - Do not assume the repo is production-ready.
+- Do not assume the repo is runnable if the required source tree is missing.
+- Never invent missing files, folders, tests, services, or infrastructure.
 
 ## Product Mode Rules
 
@@ -71,6 +80,7 @@ Agents should build context in this order:
 - Prioritize blocker removal, security, monetization readiness, and dependency order.
 - Keep changes localized and reversible.
 - Update docs when architecture, product scope, or work ownership changes.
+- If the filesystem snapshot is incomplete or unbuildable, stop implementation work and document the blocker first.
 
 ## Security Rules
 
@@ -86,3 +96,10 @@ Agents should build context in this order:
 - Use `docs/progress-tracking.md` and `docs/progress/current-status.md` for shared progress.
 - Use `docs/open-questions-register.md` for unresolved decisions.
 - Use `docs/decisions/decision-log.md` for stable project decisions.
+
+## Documentation Sync Rules
+
+- Keep `README.md` truthful about what is actually present in the repo today.
+- Keep `docs/project-overview.md` focused on verified current state plus explicitly labeled target state.
+- Keep `docs/progress/current-status.md` limited to present blockers and immediate next actions.
+- If a document is still useful but no longer current, relabel it as planned, historical, or superseded instead of silently preserving false claims.

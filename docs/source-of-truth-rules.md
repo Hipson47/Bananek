@@ -3,11 +3,13 @@
 ## Priority Order
 
 1. explicit user instruction
-2. actual code, tests, config, infra artifacts
-3. stable project decision log
-4. current docs in this folder
-5. strategy report
-6. older notes, comments, TODOs, prompts
+2. filesystem reality
+3. executable/config evidence (`package.json`, scripts, imports, real directories, actual test files)
+4. stable project decision log
+5. current status / progress docs
+6. current docs in this folder
+7. strategy / recommendation / roadmap docs
+8. historical notes, older reports, TODOs, comments, prompts
 
 ## Contradiction Handling
 
@@ -40,4 +42,10 @@ If a task changes one of these, update docs in the same task when practical:
 It must be used actively, but:
 - it is not code
 - it is not a decision log
-- it does not override repo reality
+- it does not override filesystem or executable reality
+
+## Missing-Code Rule
+
+- Do not claim a source tree, tests, backend, or infrastructure exist unless the filesystem proves it.
+- If git metadata or earlier docs suggest code should exist but the working tree does not contain it, label that as historical, planned, or blocked.
+- Do not silently turn `HEAD`-backed or historical implementation notes into current-state truth.

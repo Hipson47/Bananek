@@ -4,6 +4,12 @@ Status: **approved** (decisions DEC-004 through DEC-010 locked 2026-04-20)
 Owner: Architecture Agent → Backend Agent
 Depends on: working tree restoration (prerequisite, not part of this spec)
 
+## Document Status
+
+- `Target State`: approved implementation spec for a future Phase 1 slice
+- `Not Yet Implemented`: nothing in this spec should be read as proof that the backend proxy exists in the current filesystem snapshot
+- `Historical / Reference`: sections that describe `src/` adapters and tests are based on approved planning and git-backed reference context, not the currently present working tree
+
 ---
 
 ## 1. Objective
@@ -289,6 +295,61 @@ Design decisions:
 - **No `apiKey` field**: the backend injects keys from env vars based on `model.provider`.
 - **50 MB body limit**: base64 encoding inflates image size ~33%. 4 reference images at ~8 MB each = ~42 MB worst case. Generous limit for playground use.
 
+### Payload-Size Enforcement (DEC-010)
+
+Three layers of protection, enforced in order:
+
+**Layer 1 — Hono body-size middleware (backstop)**
+- Reject any request body > 50 MB before JSON parsing
+- HTTP 413 Payload Too Large
+- Prevents memory exhaustion from arbitrarily large payloads
+
+```typescript
+// backend/src/index.ts
+import { bodyLimit } from "hono/body-limit";
+app.use("/api/*", bodyLimit({ maxSize: 50 * 1024 * 1024 }));  // 50 MB
+```
+
+**Layer 2 — Per-reference size validation (in `validateGenerateRequest`)**
+- Each `references[].dataUrl` is checked: decoded base64 size must not exceed 10 MB
+- Size is estimated from the base64 portion: `Math.ceil(base64String.length * 3 / 4)` (avoids decoding the full buffer just to measure)
+- Rejection: 400 `{ kind: "validation", message: "Reference image exceeds the 10 MB size limit." }`
+
+```typescript
+// backend/src/validation.ts — added to validation function
+const MAX_REFERENCE_BYTES = 10 * 1024 * 1024; // 10 MB decoded
+
+for (const ref of body.references ?? []) {
+  if (!ref.dataUrl?.startsWith("data:"))
+    return { kind: "validation", message: "Reference images must be provided as data: URLs." };
+
+  const commaIndex = ref.dataUrl.indexOf(",");
+  if (commaIndex === -1)
+    return { kind: "validation", message: "Malformed data URL in reference image." };
+
+  const base64Part = ref.dataUrl.slice(commaIndex + 1);
+  const estimatedBytes = Math.ceil(base64Part.length * 3 / 4);
+  if (estimatedBytes > MAX_REFERENCE_BYTES)
+    return { kind: "validation", message: "Reference image exceeds the 10 MB size limit." };
+}
+```
+
+**Layer 3 — Reference count validation (existing)**
+- `references.length` must not exceed `model.maxReferences` (already validated, max value is 6 for `nano-banana-pro`)
+- Combined with Layer 2: worst case = 6 × 10 MB × 1.33 ≈ 80 MB base64, caught by Layer 1 backstop at 50 MB
+- This means effective max per-reference at 6 refs is ~6.25 MB decoded, which is more than enough for playground use
+
+**Worst-case analysis:**
+
+| Model | maxReferences | Max decoded per ref | Max base64 total | Within 50 MB body? |
+|---|---|---|---|---|
+| nano-banana-pro | 6 | 10 MB | ~80 MB | No — Layer 1 catches at 50 MB, effective ~6.2 MB/ref |
+| nano-banana-2-fast/thinking | 4 | 10 MB | ~53 MB | Borderline — Layer 1 catches |
+| nano-banana-fal-quality | 4 | 10 MB | ~53 MB | Borderline — Layer 1 catches |
+| nano-banana-fal-fast | 0 | n/a | 0 | Always OK |
+
+For Phase 1 (internal playground), this is acceptable. The 50 MB body limit naturally constrains effective per-reference size when multiple references are used. Future phases with S3 presigned uploads remove this constraint entirely.
+
 ### Response — Success (200)
 
 ```typescript
@@ -381,12 +442,26 @@ function validateGenerateRequest(body: GenerateRequestBody): AppError | null {
   if (!model.supportedQualities.includes(body.quality))
     return { kind: "validation", message: "The selected quality is not supported." };
 
-  // 9. reference mime types
+  // 9. reference format, mime types, and size limits (DEC-004, DEC-005, DEC-010)
+  const MAX_REFERENCE_BYTES = 10 * 1024 * 1024; // 10 MB decoded
+
   for (const ref of body.references ?? []) {
-    if (!model.supportedMimeTypes.includes(ref.mimeType))
-      return { kind: "validation", message: `Unsupported reference type for ${model.label}: ${ref.mimeType}.` };
+    // DEC-005: reject non-data: URLs
     if (!ref.dataUrl?.startsWith("data:"))
       return { kind: "validation", message: "Reference images must be provided as data: URLs." };
+
+    // mime type check
+    if (!model.supportedMimeTypes.includes(ref.mimeType))
+      return { kind: "validation", message: `Unsupported reference type for ${model.label}: ${ref.mimeType}.` };
+
+    // DEC-010: per-reference size limit
+    const commaIndex = ref.dataUrl.indexOf(",");
+    if (commaIndex === -1)
+      return { kind: "validation", message: "Malformed data URL in reference image." };
+    const base64Part = ref.dataUrl.slice(commaIndex + 1);
+    const estimatedBytes = Math.ceil(base64Part.length * 3 / 4);
+    if (estimatedBytes > MAX_REFERENCE_BYTES)
+      return { kind: "validation", message: "Reference image exceeds the 10 MB size limit." };
   }
 
   return null;
@@ -474,7 +549,9 @@ The thrown error is an `AppError` — the existing `App.tsx` catch block already
 | returns 400 for unknown modelId | `generate-route.test.ts` | Validation |
 | returns 400 for img>img with no references | `generate-route.test.ts` | Validation |
 | returns 400 for unsupported aspect ratio | `generate-route.test.ts` | Validation |
-| returns 400 for reference with non-data: URL | `generate-route.test.ts` | Security — reject blob:/http: references |
+| returns 400 for reference with non-data: URL | `generate-route.test.ts` | Security — reject blob:/http: references (DEC-005) |
+| returns 400 for reference exceeding 10 MB size limit | `generate-route.test.ts` | Payload-size enforcement (DEC-010) |
+| returns 400 for malformed data URL (no comma) | `generate-route.test.ts` | Payload-size enforcement (DEC-010) |
 | returns 502 when provider returns error | `generate-route.test.ts` | Upstream failure |
 | returns 502 when provider returns empty result | `generate-route.test.ts` | Empty output |
 | injects correct Gemini key from env | `gemini-adapter.test.ts` | Key isolation |
@@ -496,7 +573,7 @@ The thrown error is an `AppError` — the existing `App.tsx` catch block already
 | Phase | Frontend tests | Backend tests | Total |
 |---|---|---|---|
 | Before | 15 (6 state + 5 validation + 4 routing) | 0 | 15 |
-| After | 8 (4 validation + 4 backendAdapter) | 13 (9 route + 2 gemini + 2 fal) | 21 |
+| After | 8 (4 validation + 4 backendAdapter) | 15 (11 route + 2 gemini + 2 fal) | 23 |
 
 ## 11. Rollout Risks
 
@@ -530,23 +607,25 @@ Phase 1 is **done** when all of the following are true:
 ### Security
 
 10. `GEMINI_API_KEY` and `FAL_API_KEY` are read from `.env` / environment variables only.
-11. Backend rejects requests with `references[].dataUrl` that are not `data:` URLs (no `blob:`, `http:`, `file:` URLs accepted).
-12. Backend returns 400 for invalid/unknown `modelId` values.
+11. Backend rejects requests with `references[].dataUrl` that are not `data:` URLs (no `blob:`, `http:`, `file:` URLs accepted). (DEC-005)
+12. Backend returns 400 for invalid/unknown `modelId` values. (DEC-006)
 13. `GET /health` returns 200.
+14. Backend rejects references exceeding 10 MB decoded size with 400. (DEC-010)
+15. Backend rejects requests with total body > 50 MB with 413. (DEC-010)
 
 ### Tests
 
-14. All backend tests pass: `cd backend && npm test` (≥13 tests).
-15. All frontend tests pass: `npm test` (≥8 tests).
-16. TypeScript compiles clean: `npx tsc --noEmit` in both frontend and backend.
+16. All backend tests pass: `cd backend && npm test` (≥15 tests).
+17. All frontend tests pass: `npm test` (≥8 tests).
+18. TypeScript compiles clean: `npx tsc --noEmit` in both frontend and backend.
 
 ### Code quality
 
-17. No `apiKey` field in `PlaygroundState` type.
-18. No `localStorage` API key logic in `state.ts`.
-19. No `geminiAdapter.ts` or `falAdapter.ts` in `src/lib/provider/`.
-20. No `mockNanoBananaAdapter.ts` anywhere.
-21. `backend/.env.example` exists with `GEMINI_API_KEY=`, `FAL_API_KEY=`, `PORT=3001`, `ALLOWED_ORIGINS=http://localhost:5173`.
+19. No `apiKey` field in `PlaygroundState` type.
+20. No `localStorage` API key logic in `state.ts`.
+21. No `geminiAdapter.ts` or `falAdapter.ts` in `src/lib/provider/`.
+22. No `mockNanoBananaAdapter.ts` anywhere.
+23. `backend/.env.example` exists with `GEMINI_API_KEY=`, `FAL_API_KEY=`, `PORT=3001`, `ALLOWED_ORIGINS=http://localhost:5173`.
 
 ---
 

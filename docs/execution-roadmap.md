@@ -1,5 +1,9 @@
 # Execution Roadmap
 
+## Document Status
+
+This is a target-state roadmap. It is not evidence that the corresponding implementation exists in the current filesystem snapshot.
+
 ## Planning Rule
 
 Order work by:
@@ -75,9 +79,9 @@ Make the first workflow trustworthy enough for real users.
 
 ### Now
 
-- align docs and role boundaries
-- define customer product mode vs internal mode
-- design the first secure backend slice
+- keep docs aligned with current filesystem reality
+- restore or rehydrate a complete source baseline
+- only then resume implementation work
 
 ### Next
 

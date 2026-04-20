@@ -2,12 +2,13 @@
 
 ## What This Project Is
 
-- `Verified Fact`: an existing `Vite + React + TypeScript` repository that started as a frontend playground for image generation and image-to-image workflows
-- `Verified Fact`: it currently contains a provider abstraction layer and real browser-side adapters for `Google Gemini` and `FAL`
-- `Proposal`: evolve it incrementally into a monetizable, automation-first product with a predefined outcome
+- `Verified Fact`: a runnable Vite + React + TypeScript frontend slice for product photo enhancement
+- `Verified Fact`: a repository that still contains substantial planning and architecture documentation alongside the runnable frontend
+- `Verified Fact`: a project that is intended to evolve into a monetizable, automation-first AI photo product
 
 ## What This Project Is Not
 
+- `Verified Fact`: not yet a complete product platform
 - `Verified Fact`: not yet a production-grade product
 - `Verified Fact`: not yet a backend system
 - `Verified Fact`: not yet a billing/auth/storage platform
@@ -28,44 +29,46 @@
 
 ### Verified Facts
 
-- Frontend SPA only
-- Provider abstraction already exists
-- Prompt-first playground UX still exists
-- Provider keys are currently entered in the browser
-- No backend, no auth, no billing, no database, no object storage, no job queue
-- Tests and production build pass locally
+- `package.json`, `vite.config.ts`, `tsconfig*.json`, and `index.html` are present
+- `src/` is present and contains the active frontend app
+- `docs/` is present and contains active product, architecture, roadmap, and coordination documents
+- `dist/` is present and can be regenerated from the current app
+- `node_modules/` is present in the current working tree
+- `npm test` passes for the current lightweight validation test coverage
+- `npm run build` succeeds for the current frontend slice
 
 ### Current Strengths
 
-- clean provider routing boundary
-- small codebase with low coordination overhead
-- test coverage around state, validation, and routing
-- existing image upload and result preview flow
+- a runnable user flow now exists for upload -> preset selection -> processing -> result
+- a substantial documentation and planning system exists
+- accepted decisions preserve useful product and architecture direction
+- the mock image processor creates a clean seam for future backend/provider integration
 
 ### Current Constraints
 
-- provider keys currently exposed to the browser
-- user-facing flow is built for experimentation, not purchase conversion
-- no production asset lifecycle
-- no separation yet between product mode and internal playground mode
+- current implementation is frontend-only and uses a mock browser-side processor
+- there is no backend provider proxy yet
+- there is no auth, billing, storage, or async job system yet
 
-## Customer Mode vs Internal Mode
+## Target State
 
-### Customer Product Mode
+### Planned Direction
 
-- one upload
-- one predefined task choice
-- optional simple business-language fields only
-- automatic processing
-- preview
-- paid delivery
+- restore a working frontend codebase
+- preserve or rebuild the provider abstraction boundary
+- move provider keys server-side
+- evolve from internal playground behavior toward an automation-first paid product
 
-### Internal/Admin/Playground Mode
+### Product Direction
 
-- raw prompts allowed
-- provider comparison allowed
-- debugging tools allowed
-- not the primary user path
+- `Proposal`: default wedge is `AI product photo enhancement for e-commerce sellers`
+- `Proposal`: default value is turning amateur product photos into commerce-ready assets
+- `Constraint`: prompting, provider routing, preprocessing, postprocessing, and quality checks remain internal
+
+## Historical / Reference Context
+
+- `Historical / Planned`: several docs still describe a more advanced playground/provider-adapter codebase than the current runnable slice
+- `Historical / Planned`: Phase 1 backend-proxy documentation remains approved target-state planning, not implemented-state fact
 
 ## Non-Goals
 

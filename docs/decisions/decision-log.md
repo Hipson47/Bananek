@@ -1,5 +1,11 @@
 # Decision Log
 
+## Usage Note
+
+These decisions record accepted direction and constraints.
+
+They do **not** prove implementation status in the current filesystem snapshot. When a decision is accepted but not yet implemented, current-state docs must still label it as planned or target state.
+
 ## DEC-001
 
 - Date: 2026-04-19
@@ -150,3 +156,20 @@
   - future phases with S3 presigned uploads will not have this constraint
 - Related docs:
   - `docs/specs/phase1-backend-proxy.md` §8, §9
+
+## DEC-011
+
+- Date: 2026-04-20
+- Title: Documentation truth model
+- Status: accepted
+- Context: the repository contains valuable planning docs, but the current filesystem snapshot does not contain the expected application source tree. Several documents were describing planned or historical implementation details as if they were present now.
+- Decision: documentation must explicitly separate `Current State`, `Target State`, and `Historical / Planning` content. Filesystem reality outranks planning documents for present-tense claims.
+- Consequences:
+  - root README and current-status docs must describe the repository snapshot truthfully
+  - architecture specs and recommendations may remain, but must be read as planned or historical unless backed by the filesystem
+  - future agents must reconcile contradictions instead of silently preserving them
+- Related docs:
+  - `README.md`
+  - `AGENTS.md`
+  - `docs/README.md`
+  - `docs/source-of-truth-rules.md`

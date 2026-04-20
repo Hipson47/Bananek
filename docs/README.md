@@ -12,6 +12,14 @@ It is designed to:
 - support parallel execution across multiple agent roles,
 - preserve context across long-running tasks.
 
+## Current Reality Rule
+
+This docs set must distinguish three things clearly:
+
+- `Current State`: what is verified in the current filesystem snapshot
+- `Target State`: what has been decided or planned but is not yet implemented here
+- `Historical / Planning`: older reports, recommendations, or specs that remain useful as context
+
 ## Product Default
 
 Unless new evidence clearly contradicts it, the default product direction is:
@@ -48,19 +56,30 @@ Every major document should use these labels when relevant:
 
 ## Document Map
 
-- [project-overview.md](project-overview.md): project framing, current state, non-goals
+### Canonical / operational
+
+- [project-overview.md](project-overview.md): canonical current-state summary plus target-state framing
+- [source-of-truth-rules.md](source-of-truth-rules.md): authority hierarchy and contradiction handling
+- [progress/current-status.md](progress/current-status.md): live operational status for the current filesystem snapshot
+- [decisions/decision-log.md](decisions/decision-log.md): durable accepted decisions and their implementation status
+
+### Product / target-state planning
+
 - [product-definition.md](product-definition.md): target user, JTBD, paid flow, scope
-- [architecture-overview.md](architecture-overview.md): current and target system design
-- [execution-roadmap.md](execution-roadmap.md): phased plan and priorities
-- [agent-work-map.md](agent-work-map.md): roles, ownership boundaries, handoffs
-- [task-decomposition.md](task-decomposition.md): workstreams, dependencies, definition of done
-- [source-of-truth-rules.md](source-of-truth-rules.md): contradiction handling and assumption discipline
-- [security-and-risk-rules.md](security-and-risk-rules.md): security constraints and risk posture
-- [progress-tracking.md](progress-tracking.md): shared update format and status conventions
-- [progress/current-status.md](progress/current-status.md): compact live project snapshot
-- [open-questions-register.md](open-questions-register.md): unresolved product, architecture, and launch questions
-- [decisions/decision-log.md](decisions/decision-log.md): durable decision history
-- [product-strategy-report.md](product-strategy-report.md): planning artifact, not source of truth
+- [architecture-overview.md](architecture-overview.md): target architecture and system boundaries, with current-state notes
+- [execution-roadmap.md](execution-roadmap.md): phased target-state roadmap
+- [agent-work-map.md](agent-work-map.md): role boundaries and handoffs
+- [task-decomposition.md](task-decomposition.md): workstreams and dependencies
+- [security-and-risk-rules.md](security-and-risk-rules.md): cross-cutting risk posture
+- [open-questions-register.md](open-questions-register.md): unresolved product and architecture questions
+- [progress-tracking.md](progress-tracking.md): shared status/update format
+- [working-memory.md](working-memory.md): compact handoff state
+
+### Strategic / historical
+
+- [specs/phase1-backend-proxy.md](specs/phase1-backend-proxy.md): approved implementation spec for a future backend slice, not proof of current implementation
+- [architecture-recommendation.md](architecture-recommendation.md): architecture recommendation document, partly historical
+- [product-strategy-report.md](product-strategy-report.md): strategic planning report; useful, but not a source of current-state truth
 
 ## Update Discipline
 
@@ -69,3 +88,4 @@ Every major document should use these labels when relevant:
 - Update `decision-log.md` when a significant decision is made and accepted.
 - Update product and architecture docs when customer-facing scope or system boundaries change.
 - Do not silently overwrite contradictions. Mark them and resolve them.
+- If the working tree is incomplete, update the current-state docs before attempting implementation.

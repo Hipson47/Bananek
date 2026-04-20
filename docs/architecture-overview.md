@@ -1,31 +1,26 @@
 # Architecture Overview
 
+## Document Status
+
+- `Current State`: use this document only for verified filesystem-level facts about what exists now
+- `Target State`: this document also captures the intended architecture after the missing application baseline is restored
+- `Historical / Planned`: where this document refers to `src/` implementation details, treat them as planned or historical reference unless the filesystem proves they exist
+
 ## Current Architecture
 
 ### Verified Facts
 
-- frontend-only SPA
-- reducer-driven local state
-- provider abstraction in `src/lib/provider/*`
-- model registry in `src/lib/modelRegistry.ts`
-- direct browser-to-provider API calls
-- uploads and generated assets currently live in browser memory as `blob:` or `data:` URLs
+- the current filesystem snapshot has no `src/` tree
+- the repo contains frontend tooling/config files (`package.json`, `vite.config.ts`, `tsconfig*.json`, `index.html`)
+- the repo contains documentation that plans a frontend playground and later backend architecture
+- the current working tree is not sufficient to run, build, or test the intended app
 
 ## Current Architecture Summary
 
-Frontend responsibilities today:
-- collect prompt, model, settings, references
-- validate state
-- route generation to provider adapter
-- render result and local actions
-
-Missing today:
-- server-side provider control
-- auth
-- billing
-- persistent assets
-- job processing
-- observability
+Current-state summary:
+- documentation and configuration exist
+- application source is missing from the filesystem snapshot
+- implementation architecture cannot be verified from the current working tree alone
 
 ## Target Architecture
 
@@ -81,11 +76,9 @@ Must not own:
 
 ## Upload Flow
 
-### Current
+### Current State
 
-- browser file input
-- local preview
-- browser sends data directly to providers in some flows
+- not verifiable from the current filesystem snapshot because the application source tree is absent
 
 ### Target
 
@@ -123,6 +116,8 @@ Must not own:
 
 ## Backend Responsibilities
 
+### Target State
+
 - secure provider access
 - workflow orchestration
 - persistent job tracking
@@ -131,6 +126,8 @@ Must not own:
 - logging and error normalization
 
 ## Frontend Responsibilities
+
+### Target State
 
 - collect only customer-safe inputs
 - render progress and results

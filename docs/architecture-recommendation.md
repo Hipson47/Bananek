@@ -1,5 +1,9 @@
 # Architecture Recommendation — Implementation-Ready Proposal
 
+## Document Status
+
+This is a recommendation and planning document. It is not a statement that the recommended architecture exists in the current filesystem snapshot.
+
 ---
 
 ## 0. Repo Reality Snapshot (what is actually true right now)
@@ -22,7 +26,7 @@
 
 ### Working Tree Issue `[VF]`
 
-The `src/` directory currently contains empty/zero-byte files that cannot be overwritten via `git checkout` (permission error in the sandbox environment). All source code is intact in `git show HEAD:src/*`. **Before any implementation begins, the working tree must be restored to match HEAD.** This is a sandbox artifact, not a code loss.
+The current filesystem snapshot does not contain the expected `src/` tree. Git-backed reference material may still indicate that those files exist in `HEAD`, but they are not present in the current working tree. **Before any implementation begins, a complete source baseline must be restored into the working tree.**
 
 ---
 

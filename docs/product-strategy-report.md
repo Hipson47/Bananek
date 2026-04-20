@@ -1,5 +1,12 @@
 # Nano Banana Playground — Audyt repozytorium i strategia produktowa
 
+## Status Note
+
+This is a strategic planning artifact.
+
+- `Historical / Planning`: valuable for target direction and prioritization
+- `Outdated or Contradicted`: any claim that the current repo contains a working frontend source tree, passing tests, or implemented adapter code in the filesystem snapshot should not be treated as current-state truth unless re-verified from the filesystem
+
 ---
 
 # Executive Summary

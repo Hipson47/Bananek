@@ -2,37 +2,39 @@
 
 ## Current Objective
 
-Turn the repository from an internal prompt-first playground into an automation-first product foundation for paid product photo enhancement.
+Ship the first runnable frontend slice while keeping the backend-proxy Phase 1 scope ready for the next implementation pass.
 
 ## Active Milestone
 
-Milestone 1: documentation and coordination foundation
+Runnable frontend vertical slice
+
+## Current State
+
+- `src/` now exists and contains a runnable Vite + React + TypeScript app
+- `npm test` passes for the current lightweight validation coverage
+- `npm run build` succeeds
+- the app supports upload, preset selection, processing, and result comparison
+- processing is still mocked locally through a browser-side processor seam
 
 ## Workstream Status
 
 | Workstream | Owner | Status | Notes |
 |---|---|---|---|
-| WS1 Product Definition Lock | Product Strategy Agent | in_progress | direction is mostly set, first paid task still unresolved |
-| WS2 Repo Reality And Contracts | Repo Audit Agent | in_progress | frontend playground reality verified, backend gap confirmed |
-| WS3 Target Architecture And First Slice | Architecture Agent | in_progress | backend orchestration slice recommended, backend stack unresolved |
-| WS4 Backend Orchestration Foundation | Backend Agent | not_started | waiting on architecture lock |
-| WS5 Customer Product Mode Frontend | Frontend Agent | not_started | waiting on API contract and first task lock |
-| WS6 AI Task Pipeline Definition | AI Pipeline Agent | not_started | waiting on first task selection |
-| WS7 Verification Layer | QA / Verification Agent | not_started | waiting on implementation work |
-| WS8 Shared Context And Program Tracking | Documentation / PM Agent | in_progress | initial docs package being established |
+| Runnable frontend slice | Frontend Agent | done | upload -> preset -> process -> result flow implemented |
+| Repo baseline verification | Repo Audit Agent | done | current filesystem now includes `src/` and passes build/test |
+| Phase 1 backend proxy | Backend Agent | not_started | next approved implementation slice |
+| Customer product mode | Frontend + Product Strategy | not_started | still target state only |
 
 ## Current Blockers
 
-- Blocker: first paid task not explicitly locked
-  - Impact: pipeline and frontend cannot optimize for one deterministic outcome
-  - Needed from: Product Strategy Agent
-  - Unblock action: choose the first customer-facing task
-
-- Blocker: backend stack not yet decided
-  - Impact: backend implementation cannot begin with confidence
-  - Needed from: Architecture Agent
-  - Unblock action: pick the first backend stack for secure orchestration
+- Blocker: no backend integration yet
+  - Impact: processing remains mocked and provider keys are not part of a server boundary yet
+  - Needed from: implementation work on approved Phase 1 spec
+  - Unblock action: add the Node.js + Hono backend proxy from `docs/specs/phase1-backend-proxy.md`
+  - Evidence: current app runs entirely in the browser and has no backend directory or `/api/generate`
 
 ## Next Action
 
-Lock the first paid customer task and the backend implementation slice, then start backend orchestration work.
+1. Implement the approved backend proxy slice
+2. Replace the mock processor with a backend adapter
+3. Preserve the current UI flow while moving provider access server-side
