@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 
 import { getPreset } from "../presets.js";
-import { processImage } from "../processors/mock-processor.js";
+import { processImage } from "../processors/index.js";
 import { isAppError, validateEnhanceRequest } from "../validation.js";
 
 const router = new Hono();

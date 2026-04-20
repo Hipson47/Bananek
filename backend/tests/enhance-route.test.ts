@@ -1,13 +1,57 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { Hono } from "hono";
 
 import { enhanceRouter } from "../src/routes/enhance.js";
 
-// Minimal valid 1x1 red pixel PNG as data URL
+/**
+ * Route-level contract tests.
+ *
+ * These tests cover HTTP behaviour (status codes, response shape, error
+ * handling) rather than pixel-level output.  They run with PROCESSOR=mock so
+ * that the test suite stays fast and fully deterministic -- the mock is a
+ * faithful stand-in for the processor seam used by the route.
+ *
+ * Pixel-level behaviour of the real sharp processor is covered separately in
+ * sharp-processor.test.ts.
+ */
+
+// ---------------------------------------------------------------------------
+// Test fixtures -- valid 4x4 images that any processor can round-trip
+// ---------------------------------------------------------------------------
+
+// 4x4 brown PNG (generated with sharp)
 const TINY_PNG =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
-const TINY_JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==";
-const TINY_WEBP = "data:image/webp;base64,UklGRgAAAABXRUJQVlA4TA==";
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGM4MS0FjhiI4wAA4dIcIR+QGUQAAAAASUVORK5CYII=";
+
+// 4x4 brown JPEG (generated with sharp, quality 85)
+const TINY_JPEG =
+  "data:image/jpeg;base64,/9j/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAAEAAQDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAb/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/ALIAKLn/2Q==";
+
+// 4x4 brown WebP (generated with sharp, quality 85)
+const TINY_WEBP =
+  "data:image/webp;base64,UklGRjgAAABXRUJQVlA4ICwAAADwAQCdASoEAAQAAQAcJaACdLoB+AAETAAA/u8VB/5glfkG7UP/kpr/G3HYAA==";
+
+// ---------------------------------------------------------------------------
+// Env setup -- use mock processor for route contract tests
+// ---------------------------------------------------------------------------
+
+const originalProcessor = process.env.PROCESSOR;
+
+beforeAll(() => {
+  process.env.PROCESSOR = "mock";
+});
+
+afterAll(() => {
+  if (originalProcessor === undefined) {
+    delete process.env.PROCESSOR;
+  } else {
+    process.env.PROCESSOR = originalProcessor;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function createApp() {
   const app = new Hono();
@@ -23,6 +67,10 @@ function post(app: Hono, path: string, body: unknown) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
 describe("GET /api/health", () => {
   it("returns 200 with status ok", async () => {
     const app = createApp();
@@ -34,7 +82,7 @@ describe("GET /api/health", () => {
 });
 
 describe("POST /api/enhance", () => {
-  it("preserves png metadata when the mock processor returns the original bytes", async () => {
+  it("returns 200 with correct png response shape", async () => {
     const app = createApp();
     const res = await post(app, "/api/enhance", {
       presetId: "clean-background",
@@ -50,7 +98,7 @@ describe("POST /api/enhance", () => {
     expect(body.processedUrl).toMatch(/^data:image\/png;base64,/);
   });
 
-  it("preserves jpeg metadata when the mock processor returns the original bytes", async () => {
+  it("returns 200 with correct jpeg response shape", async () => {
     const app = createApp();
     const res = await post(app, "/api/enhance", {
       presetId: "marketplace-ready",
@@ -64,7 +112,7 @@ describe("POST /api/enhance", () => {
     expect(body.processedUrl).toMatch(/^data:image\/jpeg;base64,/);
   });
 
-  it("preserves webp metadata when the mock processor returns the original bytes", async () => {
+  it("returns 200 with correct webp response shape", async () => {
     const app = createApp();
     const res = await post(app, "/api/enhance", {
       presetId: "studio-polish",

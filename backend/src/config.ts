@@ -23,10 +23,17 @@ if (isNaN(rawPort) || rawPort < 1 || rawPort > 65535) {
   throw new Error(`Invalid PORT value: "${process.env.PORT}". Must be a number between 1 and 65535.`);
 }
 
+const rawProcessor = optionalEnv("PROCESSOR", "sharp");
+if (rawProcessor !== "mock" && rawProcessor !== "sharp") {
+  throw new Error(`Invalid PROCESSOR value: "${rawProcessor}". Must be "sharp" or "mock".`);
+}
+
 export const config = {
   port: rawPort,
   allowedOrigins: optionalEnv("ALLOWED_ORIGINS", "http://localhost:5173").split(","),
-  // API keys for AI providers — uncomment and add to .env.example when real processing is added:
+  /** Which image processor to use. "sharp" = real processing; "mock" = no-op for dev/tests. */
+  processor: rawProcessor as "sharp" | "mock",
+  // API keys for AI providers -- uncomment and add to .env.example when real AI processing is added:
   // geminiApiKey: requireEnv("GEMINI_API_KEY"),
   // falApiKey: requireEnv("FAL_API_KEY"),
 };

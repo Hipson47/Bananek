@@ -52,7 +52,38 @@ Move from browser-playground behavior to a backend-controlled enhancement pipeli
 - provider keys in browser ✓
 - prompt-first UX coupling ✓
 
-## Phase 2 — First Paid Workflow
+## Phase 2 — Real Image Processing
+
+### Goal
+
+Replace the mock processor with real, deterministic image processing.
+
+### Status
+
+- `Verified Fact`: complete — sharp processor implemented with 3 presets, 14 tests, processor env var selection
+
+### Deliverables
+
+- sharp processor with 3 distinct preset pipelines ✓
+- auto-orient, resize, flatten, modulate, sharpen per preset ✓
+- processor selection via PROCESSOR env var ✓
+- 14 sharp-processor tests (contract, transforms, resize constraints, error handling) ✓
+- `/api/enhance` contract unchanged ✓
+
+## Phase 3 — AI-Backed Processing
+
+### Goal
+
+Replace or augment sharp with an AI provider for preset-based enhancement.
+
+### Deliverables
+
+- AI provider processor behind the same `/api/enhance` seam
+- PROCESSOR=ai-{provider} env var path
+- API key management via requireEnv pattern
+- quality comparison: sharp vs AI output
+
+## Phase 4 — First Paid Workflow
 
 ### Goal
 
@@ -83,13 +114,13 @@ Make the first workflow trustworthy enough for real users.
 
 ### Now
 
-- replace backend mock processor with real image processing (`sharp`-based transforms)
-- keep the same `/api/enhance` contract while evolving backend internals
+- choose AI provider for Phase 3 integration
+- implement AI provider processor behind the existing `/api/enhance` seam
 
 ### Next
 
-- decide whether first real-processing step is deterministic ops only or an AI-backed preset pipeline
-- wire AI provider behind the established backend seam (not in browser)
+- paid delivery / credit consumption (Phase 4)
+- output storage for async delivery
 
 ### Later
 
