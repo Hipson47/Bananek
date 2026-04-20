@@ -23,7 +23,8 @@ The raw prompt playground remains allowed only as an internal/admin workflow.
 ## Current Filesystem Reality
 
 - Treat the current filesystem snapshot as the primary truth for what exists now.
-- The current working tree is documentation-heavy and includes frontend tooling/config files, but the `src/` application tree is currently missing from the filesystem snapshot.
+- `src/` contains a runnable Vite + React + TypeScript customer-mode enhancement app.
+- `backend/` contains a Node.js + Hono + TypeScript server with `POST /api/enhance`.
 - If a document describes code, tests, folders, or infrastructure that are not present in the filesystem, do not treat them as implemented.
 - If git metadata or earlier docs suggest missing code once existed, treat that as historical or planned context, not current filesystem reality.
 

@@ -2,39 +2,40 @@
 
 ## Current Objective
 
-Ship the first runnable frontend slice while keeping the backend-proxy Phase 1 scope ready for the next implementation pass.
+Phase 1 backend proxy implemented. Next: add real image processing or AI provider integration behind the established HTTP boundary.
 
 ## Active Milestone
 
-Runnable frontend vertical slice
+Phase 1 backend proxy — complete
 
 ## Current State
 
-- `src/` now exists and contains a runnable Vite + React + TypeScript app
-- `npm test` passes for the current lightweight validation coverage
-- `npm run build` succeeds
-- the app supports upload, preset selection, processing, and result comparison
-- processing is still mocked locally through a browser-side processor seam
+- `src/` contains a runnable Vite + React + TypeScript app (upload → preset → process → result)
+- `backend/` contains a Node.js + Hono + TypeScript server with `POST /api/enhance` and `GET /api/health`
+- Frontend `BackendProcessor` calls `/api/enhance` instead of processing locally
+- Vite dev proxy routes `/api` → `localhost:3001`
+- Backend mock processor returns the input image with a simulated delay (proves HTTP pipeline, not image transformation)
+- `npm test` (root): 21 tests pass (3 frontend + 18 backend)
+- `tsc --noEmit`: clean in both frontend and backend
+- `npm run build`: frontend production build succeeds
 
 ## Workstream Status
 
 | Workstream | Owner | Status | Notes |
 |---|---|---|---|
-| Runnable frontend slice | Frontend Agent | done | upload -> preset -> process -> result flow implemented |
-| Repo baseline verification | Repo Audit Agent | done | current filesystem now includes `src/` and passes build/test |
-| Phase 1 backend proxy | Backend Agent | not_started | next approved implementation slice |
-| Customer product mode | Frontend + Product Strategy | not_started | still target state only |
+| Runnable frontend slice | Frontend Agent | done | upload → preset → process → result flow |
+| Phase 1 backend proxy | Backend Agent | done | Hono server, enhance route, validation, mock processor, 18 tests |
+| Frontend ↔ backend wiring | Full Stack | done | BackendProcessor, Vite proxy |
+| Real image processing | Backend Agent | not_started | Replace mock processor with sharp-based or AI-backed processing |
+| Customer product mode | Product Strategy | not_started | target state only |
 
 ## Current Blockers
 
-- Blocker: no backend integration yet
-  - Impact: processing remains mocked and provider keys are not part of a server boundary yet
-  - Needed from: implementation work on approved Phase 1 spec
-  - Unblock action: add the Node.js + Hono backend proxy from `docs/specs/phase1-backend-proxy.md`
-  - Evidence: current app runs entirely in the browser and has no backend directory or `/api/generate`
+None. The backend proxy pipeline is functional end-to-end.
 
 ## Next Action
 
-1. Implement the approved backend proxy slice
-2. Replace the mock processor with a backend adapter
-3. Preserve the current UI flow while moving provider access server-side
+1. Add real image processing to the backend mock processor (sharp or AI provider)
+2. Clean up unused `MockImageProcessor` (canvas-based, browser-only)
+3. Add frontend integration tests for `BackendProcessor`
+4. Update AGENTS.md to reflect current filesystem state

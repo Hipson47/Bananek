@@ -5,13 +5,13 @@ import { EmptyState } from "./components/EmptyState";
 import { PresetPicker } from "./components/PresetPicker";
 import { UploadPanel } from "./components/UploadPanel";
 import { PRESETS } from "./features/enhancer/presets";
-import { MockImageProcessor } from "./features/enhancer/processors/mockImageProcessor";
+import { BackendProcessor } from "./features/enhancer/processors/backendProcessor";
 import type {
   EnhancementPreset,
   ProcessedImageResult,
 } from "./features/enhancer/types";
 
-const processor = new MockImageProcessor();
+const processor = new BackendProcessor();
 
 type ProcessingStatus = "idle" | "ready" | "processing" | "success" | "error";
 
