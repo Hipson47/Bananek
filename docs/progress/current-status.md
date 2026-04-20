@@ -2,11 +2,11 @@
 
 ## Current Objective
 
-Phase 1 backend proxy implemented. Next: add real image processing or AI provider integration behind the established HTTP boundary.
+Phase 1 backend proxy implemented and hardened. Next: add real image processing behind the established HTTP boundary.
 
 ## Active Milestone
 
-Phase 1 backend proxy — complete
+Integration hardening after Phase 1 — complete
 
 ## Current State
 
@@ -14,8 +14,9 @@ Phase 1 backend proxy — complete
 - `backend/` contains a Node.js + Hono + TypeScript server with `POST /api/enhance` and `GET /api/health`
 - Frontend `BackendProcessor` calls `/api/enhance` instead of processing locally
 - Vite dev proxy routes `/api` → `localhost:3001`
-- Backend mock processor returns the input image with a simulated delay (proves HTTP pipeline, not image transformation)
-- `npm test` (root): 21 tests pass (3 frontend + 18 backend)
+- Backend mock processor returns the input image with a simulated delay and truthful output metadata
+- `MockImageProcessor` is no longer part of the active code path
+- `npm test` (root): 25 tests pass (7 frontend + 18 backend) when run with `TMPDIR=/tmp`
 - `tsc --noEmit`: clean in both frontend and backend
 - `npm run build`: frontend production build succeeds
 
@@ -25,7 +26,8 @@ Phase 1 backend proxy — complete
 |---|---|---|---|
 | Runnable frontend slice | Frontend Agent | done | upload → preset → process → result flow |
 | Phase 1 backend proxy | Backend Agent | done | Hono server, enhance route, validation, mock processor, 18 tests |
-| Frontend ↔ backend wiring | Full Stack | done | BackendProcessor, Vite proxy |
+| Frontend ↔ backend wiring | Full Stack | done | BackendProcessor, Vite proxy, adapter coverage |
+| Integration hardening | Full Stack | done | truthful mock contract, docs sync, dead-path cleanup |
 | Real image processing | Backend Agent | not_started | Replace mock processor with sharp-based or AI-backed processing |
 | Customer product mode | Product Strategy | not_started | target state only |
 
@@ -35,7 +37,6 @@ None. The backend proxy pipeline is functional end-to-end.
 
 ## Next Action
 
-1. Add real image processing to the backend mock processor (sharp or AI provider)
-2. Clean up unused `MockImageProcessor` (canvas-based, browser-only)
-3. Add frontend integration tests for `BackendProcessor`
-4. Update AGENTS.md to reflect current filesystem state
+1. Replace the backend mock processor with real processing, likely `sharp`
+2. Decide whether the first real-processing step is deterministic image ops only or an AI-backed preset pipeline
+3. Keep the same `/api/enhance` contract while evolving backend processing internals

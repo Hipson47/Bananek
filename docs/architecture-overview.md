@@ -2,37 +2,30 @@
 
 ## Document Status
 
-- `Current State`: use this document only for verified filesystem-level facts about what exists now
-- `Target State`: this document also captures the intended architecture after the missing application baseline is restored
-- `Historical / Planned`: where this document refers to `src/` implementation details, treat them as planned or historical reference unless the filesystem proves they exist
+- `Current State`: verified architecture that exists in the filesystem now
+- `Near-Term Target`: the next implementation step after Phase 1 hardening
+- `Historical`: older playground-oriented architecture notes are reference only
 
 ## Current Architecture
 
 ### Verified Facts
 
-- the current filesystem snapshot has no `src/` tree
-- the repo contains frontend tooling/config files (`package.json`, `vite.config.ts`, `tsconfig*.json`, `index.html`)
-- the repo contains documentation that plans a frontend playground and later backend architecture
-- the current working tree is not sufficient to run, build, or test the intended app
+- `src/` contains the active customer-facing React app
+- `backend/` contains the active Hono API
+- the active enhancement request path is:
+  - `src/App.tsx`
+  - `src/features/enhancer/processors/backendProcessor.ts`
+  - `POST /api/enhance`
+  - `backend/src/processors/mock-processor.ts`
+- the frontend no longer uses browser-side mock processing as the active path
+- local development uses a Vite proxy from `/api` to the backend
 
 ## Current Architecture Summary
 
-Current-state summary:
-- documentation and configuration exist
-- application source is missing from the filesystem snapshot
-- implementation architecture cannot be verified from the current working tree alone
-
-## Target Architecture
-
-### Proposal
-
-Incrementally evolve to:
-- customer-facing frontend for predefined workflows
-- backend API for orchestration
-- server-side provider routing
-- durable storage for uploads and outputs
-- job state tracking
-- billing/auth layer added after the secure processing path exists
+- the frontend owns upload, preset selection, progress UI, and result rendering
+- the backend owns request validation and processing orchestration
+- the current processor is still a mock, but the browser/backend boundary is now explicit
+- provider details and future server-side processing remain hidden from the browser
 
 ## Key Systems And Boundaries
 
@@ -40,103 +33,53 @@ Incrementally evolve to:
 
 Owns:
 - upload UI
-- simple task selection
-- preview UI
-- customer state and task progress display
+- preset selection
+- request initiation
+- status, error, and result rendering
 
 Must not own:
 - provider keys
-- raw prompt generation logic
-- provider selection
-- final pricing or credit enforcement logic
+- hidden prompts
+- provider routing
+- server-side processing logic
 
 ### Backend
 
 Owns:
 - request validation
-- provider key management
-- hidden prompt and routing logic
-- preprocessing and postprocessing orchestration
-- job status
-- payment and entitlement checks
-- final delivery authorization
+- processing boundary for `/api/enhance`
+- response contract returned to the UI
+- future real-processing integration point
 
-### Provider Abstraction Layer
+Does not yet own:
+- auth
+- billing
+- storage
+- queueing
+- durable delivery
 
-Owns:
-- normalized request/response contract
-- provider-specific request formatting
-- provider error normalization
-- routing between internal task definitions and external providers
+## Current Processing Flow
 
-Must not own:
-- customer-facing UX semantics
-- billing logic
-- browser state
+1. Customer uploads one image.
+2. Customer selects one predefined preset.
+3. Frontend serializes the file and calls `POST /api/enhance`.
+4. Backend validates the request.
+5. Mock processor returns the original bytes with format-correct metadata.
+6. Frontend renders the returned result.
 
-## Upload Flow
+## Near-Term Target
 
-### Current State
+The next milestone should preserve the same frontend/backend seam and replace only the backend processing implementation:
 
-- not verifiable from the current filesystem snapshot because the application source tree is absent
-
-### Target
-
-1. Frontend submits upload intent to backend.
-2. Backend authorizes and returns upload instructions.
-3. Asset is stored in controlled storage.
-4. Backend records a processing job.
-
-## Processing Flow
-
-### Target
-
-1. Customer selects a predefined task.
-2. Backend maps task to internal workflow.
-3. Backend runs preprocessing.
-4. Backend calls provider abstraction with hidden prompt logic.
-5. Backend runs postprocessing and basic quality checks.
-6. Backend stores final output and updates job state.
-7. Frontend polls or subscribes to job status.
-
-## Storage Lifecycle
-
-### Proposal
-
-- original upload stored temporarily
-- derived working assets stored only as needed
-- final customer-visible output stored long enough for preview/download
-- retention and deletion policy explicitly defined later
-
-### Constraints
-
-- uploads are untrusted
-- storage paths must not be guessable
-- output delivery must be authorized
-
-## Backend Responsibilities
-
-### Target State
-
-- secure provider access
-- workflow orchestration
-- persistent job tracking
-- storage coordination
-- payment/credit gating
-- logging and error normalization
-
-## Frontend Responsibilities
-
-### Target State
-
-- collect only customer-safe inputs
-- render progress and results
-- avoid exposing internal orchestration details
-- keep internal playground isolated if retained
+1. keep `POST /api/enhance` as the stable customer-facing contract
+2. replace the mock processor with real processing, likely `sharp` first
+3. keep AI-provider integration behind the backend boundary when it is added later
+4. add storage, jobs, billing, and delivery only in later phases
 
 ## Architecture Decision Constraints
 
 - incremental evolution over rewrite
-- preserve useful provider abstraction code where possible
+- preserve the backend boundary already introduced in Phase 1
 - no provider keys in the browser
 - no customer prompts in the default product flow
+- keep customer flow preset-based: upload -> preset -> process -> result

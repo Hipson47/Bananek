@@ -1,3 +1,7 @@
+// Archived reference only.
+// This browser-side mock processor is no longer part of the active app path.
+// The live enhancement flow uses BackendProcessor -> POST /api/enhance.
+
 import type {
   EnhancementPreset,
   ImageProcessor,

@@ -11,32 +11,38 @@ import type { PresetId, ProcessedImageResult } from "../types.js";
  */
 
 const SIMULATED_LATENCY_MS = 200;
-const OUTPUT_MIME_TYPE = "image/jpeg";
+const MIME_TYPE_TO_EXTENSION: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/webp": "webp",
+};
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildOutputFilename(presetId: PresetId): string {
-  return `product-${presetId}.jpg`;
+function buildOutputFilename(presetId: PresetId, mimeType: string): string {
+  const extension = MIME_TYPE_TO_EXTENSION[mimeType] ?? "bin";
+  return `product-${presetId}.${extension}`;
 }
 
 export async function processImage(
   imageBuffer: Buffer,
-  _originalMime: string,
+  originalMime: string,
   presetId: PresetId,
 ): Promise<ProcessedImageResult> {
   // Simulate processing latency so the UI loading state is visible in dev
   await wait(SIMULATED_LATENCY_MS);
 
-  // Return the original image as a JPEG data URL.
+  // Return the original image unchanged until real processing is added.
+  // The response metadata must therefore preserve the original format.
   // Real processors will perform actual transformations here.
   const base64 = imageBuffer.toString("base64");
 
   return {
-    filename: buildOutputFilename(presetId),
-    mimeType: OUTPUT_MIME_TYPE,
-    processedUrl: `data:${OUTPUT_MIME_TYPE};base64,${base64}`,
+    filename: buildOutputFilename(presetId, originalMime),
+    mimeType: originalMime,
+    processedUrl: `data:${originalMime};base64,${base64}`,
     processorLabel: "Backend mock enhancement pipeline",
   };
 }

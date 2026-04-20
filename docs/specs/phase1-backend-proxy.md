@@ -1,22 +1,21 @@
 # Phase 1 Spec: Secure Backend Provider Proxy
 
-Status: **approved** (decisions DEC-004 through DEC-010 locked 2026-04-20)
+Status: **completed and now historical reference**
 Owner: Architecture Agent → Backend Agent
-Depends on: working tree restoration (prerequisite, not part of this spec)
 
 ## Document Status
 
-- `Target State`: approved implementation spec for a future Phase 1 slice
-- `Not Yet Implemented`: nothing in this spec should be read as proof that the backend proxy exists in the current filesystem snapshot
-- `Historical / Reference`: sections that describe `src/` adapters and tests are based on approved planning and git-backed reference context, not the currently present working tree
+- `Historical / Reference`: this spec described Phase 1 before implementation
+- `Implemented`: the repository now has an active backend in `backend/` and the frontend is wired to it
+- `Current Next Step`: real processing behind `POST /api/enhance`
 
 ---
 
 ## 1. Objective
 
-Move provider API calls from the browser to a backend proxy so that API keys are never exposed to the client. The playground UI continues to work identically from the user's perspective — same inputs, same outputs, same error messages — but all provider traffic flows through `POST /api/generate` on a co-located backend.
+This objective has been completed for the current customer-mode repo shape: the browser/backend seam now exists and the frontend enhancement path goes through the backend.
 
-This is the smallest change that eliminates the highest-severity security risk in the repo and unblocks every subsequent backend milestone (auth, billing, jobs, storage).
+The next milestone is not another backend proxy pass. It is replacing the mock processor behind `POST /api/enhance` with real processing.
 
 ## 2. In Scope
 
@@ -117,9 +116,9 @@ type GenerateResponse = {
 
 5 models defined. The `ModelOption` type includes `provider: ProviderName` which drives routing. The registry is the source of truth for model capabilities. **The full registry is needed on both frontend (for UI rendering) and backend (for validation + adapter dispatch).**
 
-### Working tree status `[VF]`
+### Working tree status `[Historical]`
 
-All `src/` files are zero-byte in the working tree due to a sandbox sync issue. `git show HEAD:src/*` returns full content. **Working tree must be restored before implementation.** This is a prerequisite, not part of this spec.
+This warning is historical. The current repo state includes a working `src/` tree and implemented backend.
 
 ## 5. Architecture Delta
 

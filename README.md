@@ -1,54 +1,77 @@
 # Product Photo Enhancer
 
-Thin runnable Vite + React + TypeScript slice for an automation-first AI product photo enhancement app.
+Runnable product-photo enhancement slice for an automation-first e-commerce workflow.
 
 ## What Exists Today
 
-- a real `src/` application tree
-- a one-page frontend flow for:
-  - uploading one image
-  - choosing one enhancement preset
-  - running a processing step
-  - viewing original vs processed output
-- a mock but replaceable image-processing seam built around `ImageProcessor`
-- frontend tooling via Vite, React, TypeScript, and Vitest
+- `src/` contains the active Vite + React + TypeScript customer flow
+- `backend/` contains a Node.js + Hono + TypeScript API with:
+  - `GET /api/health`
+  - `POST /api/enhance`
+- the active enhancement path is:
+  - upload one image
+  - choose one preset
+  - call `BackendProcessor`
+  - send the image to `/api/enhance`
+  - render the processed result
+- Vite proxies `/api/*` to the backend in local development
+- the backend currently uses a mock processor that returns the original bytes with truthful metadata
 
-## What This Slice Does
+## Current Product Flow
 
-The current app is a **frontend-first product slice**, not the full platform. It gives a user:
+The app is a narrow customer-mode slice, not a prompt playground. It supports:
 
-1. a landing view with product framing
-2. image upload with basic validation
-3. three commerce-oriented presets:
-   - `Clean Background`
-   - `Marketplace Ready`
-   - `Studio Polish`
-4. async processing with loading, success, and error states
-5. a comparison result view showing original and processed output
+1. upload one product photo
+2. choose one predefined enhancement preset
+3. process through the backend
+4. compare original vs processed output
 
-Processing is currently implemented by a mock local pipeline that uses browser-side canvas transforms. It is intentionally structured to be replaced later by a real backend/provider integration.
+This keeps the product aligned with the intended customer experience:
+
+- no prompts
+- no provider choice
+- no API keys in the browser
+- no model terminology in the primary UX
 
 ## What Is Not Implemented Yet
 
-- backend provider proxy
-- real AI processing
-- auth, billing, credits, storage, or jobs
-- customer product mode vs internal mode split in routing
+- real image processing in the backend
+- AI-provider integration behind the backend seam
+- auth, billing, credits, storage, jobs, or delivery controls
 - production deployment infrastructure
 
 ## Run
+
+Frontend:
 
 ```bash
 npm install
 npm run dev
 ```
 
-## Verify
+Backend:
 
 ```bash
-npm test
+cd backend
+npm install
+npm run dev
+```
+
+## Verify
+
+In this WSL environment, tests need `TMPDIR=/tmp`.
+
+```bash
+TMPDIR=/tmp npm test
+TMPDIR=/tmp npm --prefix backend test
 npm run build
 ```
+
+## Phase Status
+
+- Phase 1 backend proxy and frontend wiring: complete
+- Current hardening milestone: complete after this cleanup pass
+- Next milestone: replace the backend mock processor with real processing, most likely `sharp` first, with AI-provider integration later behind the same backend boundary
 
 ## Repo Guide
 
@@ -56,11 +79,3 @@ npm run build
 - docs index: [docs/README.md](/mnt/c/Users/marci/Pictures/bananek/docs/README.md:1)
 - current repo/product summary: [docs/project-overview.md](/mnt/c/Users/marci/Pictures/bananek/docs/project-overview.md:1)
 - current execution snapshot: [docs/progress/current-status.md](/mnt/c/Users/marci/Pictures/bananek/docs/progress/current-status.md:1)
-
-## Next Recommended Slice
-
-Implement the approved Phase 1 backend proxy:
-
-- move provider keys server-side
-- add `/health` and `/api/generate`
-- replace the mock processor with a backend-backed adapter seam

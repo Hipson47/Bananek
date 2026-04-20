@@ -1,8 +1,14 @@
-# Architecture Recommendation — Implementation-Ready Proposal
+# Architecture Recommendation — Historical Pre-Phase-1 Proposal
 
 ## Document Status
 
-This is a recommendation and planning document. It is not a statement that the recommended architecture exists in the current filesystem snapshot.
+This is a historical recommendation and planning document captured before Phase 1 was implemented. It is not a statement of current repo reality.
+
+Current reality:
+
+- `backend/` now exists and the frontend is wired to it
+- Phase 1 backend proxy is complete
+- the next recommended step is real backend processing, likely `sharp` first, with later AI-provider integration behind the same seam
 
 ---
 
@@ -10,8 +16,8 @@ This is a recommendation and planning document. It is not a statement that the r
 
 ### Verified Facts `[VF]`
 
-- `[VF]` The repo is a Vite + React 18 + TypeScript SPA. No backend exists anywhere. (`package.json`, `vite.config.ts`)
-- `[VF]` Source files exist in git HEAD (`c99e7fc`) — 25 `.ts/.tsx/.css` files under `src/`. Working tree copies are currently zero-byte due to a sync/permissions artifact, but git has the full content intact.
+- `[Historical]` This snapshot was taken before the backend existed. The repo now includes a Node.js + Hono + TypeScript backend.
+- `[Historical]` This snapshot also predates the restored and active `src/` tree that is now present in the working directory.
 - `[VF]` The codebase had 15 passing Vitest tests and clean TypeScript compilation as of the last working-tree session. (`src/lib/__tests__/`, `src/lib/provider/__tests__/`)
 - `[VF]` Two real provider adapters exist: `GeminiAdapter` (Google Gemini API) and `FalAdapter` (FAL.AI / Flux). Both make direct browser→provider `fetch()` calls with API keys in headers.
 - `[VF]` A `ProviderAdapter` interface + `RoutingAdapter` factory + `GenerateRequest/GenerateResponse` contracts exist. This is the strongest reusable asset.
@@ -19,14 +25,14 @@ This is a recommendation and planning document. It is not a statement that the r
 - `[VF]` A `MockNanoBananaAdapter` exists but is unreferenced in production code (dead code).
 - `[VF]` State management uses `useReducer` with `localStorage` for API key persistence per provider.
 - `[VF]` The UI is a single-screen playground: prompt textarea, model picker, settings, reference upload, result panel. The user controls everything.
-- `[VF]` Zero backend, zero auth, zero DB, zero object storage, zero queue, zero billing, zero CI/CD.
+- `[Historical]` At the time of writing there was no backend. Today the backend proxy exists, but auth, DB, object storage, queueing, billing, and CI/CD are still out of scope.
 - `[VF]` 3 git commits. No branches, no tags, no releases.
 - `[VF]` A comprehensive docs system was created (`docs/`) with 16 markdown files covering product definition, architecture overview, execution roadmap, decisions, open questions, progress tracking, and role boundaries.
 - `[VF]` Three decisions are formally logged: DEC-001 (product direction), DEC-002 (source-of-truth discipline), DEC-003 (customer vs internal mode separation).
 
-### Working Tree Issue `[VF]`
+### Working Tree Issue `[Historical]`
 
-The current filesystem snapshot does not contain the expected `src/` tree. Git-backed reference material may still indicate that those files exist in `HEAD`, but they are not present in the current working tree. **Before any implementation begins, a complete source baseline must be restored into the working tree.**
+This warning is historical. The current filesystem snapshot does contain `src/` and is buildable/testable in the present repo state.
 
 ---
 

@@ -6,6 +6,8 @@ import { enhanceRouter } from "../src/routes/enhance.js";
 // Minimal valid 1x1 red pixel PNG as data URL
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+const TINY_JPEG = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==";
+const TINY_WEBP = "data:image/webp;base64,UklGRgAAAABXRUJQVlA4TA==";
 
 function createApp() {
   const app = new Hono();
@@ -32,7 +34,7 @@ describe("GET /api/health", () => {
 });
 
 describe("POST /api/enhance", () => {
-  it("returns 200 with processed result for clean-background preset", async () => {
+  it("preserves png metadata when the mock processor returns the original bytes", async () => {
     const app = createApp();
     const res = await post(app, "/api/enhance", {
       presetId: "clean-background",
@@ -42,35 +44,38 @@ describe("POST /api/enhance", () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    expect(body).toHaveProperty("filename");
-    expect(body).toHaveProperty("mimeType", "image/jpeg");
-    expect(body).toHaveProperty("processedUrl");
+    expect(body).toHaveProperty("filename", "product-clean-background.png");
+    expect(body).toHaveProperty("mimeType", "image/png");
     expect(body).toHaveProperty("processorLabel");
-    expect(body.processedUrl).toMatch(/^data:image\/jpeg;base64,/);
+    expect(body.processedUrl).toMatch(/^data:image\/png;base64,/);
   });
 
-  it("returns 200 for marketplace-ready preset", async () => {
+  it("preserves jpeg metadata when the mock processor returns the original bytes", async () => {
     const app = createApp();
     const res = await post(app, "/api/enhance", {
       presetId: "marketplace-ready",
-      image: TINY_PNG,
+      image: TINY_JPEG,
     });
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.filename).toContain("marketplace-ready");
+    expect(body.filename).toBe("product-marketplace-ready.jpg");
+    expect(body.mimeType).toBe("image/jpeg");
+    expect(body.processedUrl).toMatch(/^data:image\/jpeg;base64,/);
   });
 
-  it("returns 200 for studio-polish preset", async () => {
+  it("preserves webp metadata when the mock processor returns the original bytes", async () => {
     const app = createApp();
     const res = await post(app, "/api/enhance", {
       presetId: "studio-polish",
-      image: TINY_PNG,
+      image: TINY_WEBP,
     });
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.filename).toContain("studio-polish");
+    expect(body.filename).toBe("product-studio-polish.webp");
+    expect(body.mimeType).toBe("image/webp");
+    expect(body.processedUrl).toMatch(/^data:image\/webp;base64,/);
   });
 
   it("returns 400 for missing preset", async () => {

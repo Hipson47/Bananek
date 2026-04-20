@@ -36,11 +36,23 @@ router.post("/enhance", async (c) => {
     );
   }
 
+  const mimeMatch = parsed.image.match(/^data:(image\/[a-z+]+);base64,/);
+  if (!mimeMatch) {
+    return c.json(
+      {
+        error: {
+          kind: "validation",
+          message: "Malformed image data URL. Expected data:<mime>;base64,<data>.",
+        },
+      },
+      400,
+    );
+  }
+
   // Decode the data URL into a Buffer
   const commaIndex = parsed.image.indexOf(",");
   const base64Data = parsed.image.slice(commaIndex + 1);
-  const mimeMatch = parsed.image.match(/^data:(image\/[a-z+]+);base64,/);
-  const originalMime = mimeMatch?.[1] ?? "image/jpeg";
+  const originalMime = mimeMatch[1];
   const imageBuffer = Buffer.from(base64Data, "base64");
 
   try {

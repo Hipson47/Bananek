@@ -77,8 +77,8 @@ Every major document should use these labels when relevant:
 
 ### Strategic / historical
 
-- [specs/phase1-backend-proxy.md](specs/phase1-backend-proxy.md): approved implementation spec for a future backend slice, not proof of current implementation
-- [architecture-recommendation.md](architecture-recommendation.md): architecture recommendation document, partly historical
+- [specs/phase1-backend-proxy.md](specs/phase1-backend-proxy.md): completed Phase 1 implementation spec, now kept as historical/reference context
+- [architecture-recommendation.md](architecture-recommendation.md): pre-Phase-1 recommendation document, now archived as historical guidance
 - [product-strategy-report.md](product-strategy-report.md): strategic planning report; useful, but not a source of current-state truth
 
 ## Update Discipline
