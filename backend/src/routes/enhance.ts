@@ -36,34 +36,23 @@ router.post("/enhance", async (c) => {
     );
   }
 
-  const mimeMatch = parsed.image.match(/^data:(image\/[a-z+]+);base64,/);
-  if (!mimeMatch) {
-    return c.json(
-      {
-        error: {
-          kind: "validation",
-          message: "Malformed image data URL. Expected data:<mime>;base64,<data>.",
-        },
-      },
-      400,
-    );
-  }
-
-  // Decode the data URL into a Buffer
+  // mimeType and image are already validated — no second regex needed
   const commaIndex = parsed.image.indexOf(",");
   const base64Data = parsed.image.slice(commaIndex + 1);
-  const originalMime = mimeMatch[1];
   const imageBuffer = Buffer.from(base64Data, "base64");
 
   try {
     const processed = await processImage(
       imageBuffer,
-      originalMime,
+      parsed.mimeType,
       parsed.presetId,
     );
 
     return c.json(processed, 200);
   } catch (err) {
+    if (!isAppError(err)) {
+      console.error("[enhance] Unexpected error during processImage:", err);
+    }
     const appError = isAppError(err)
       ? err
       : { kind: "processing" as const, message: "Image processing failed." };

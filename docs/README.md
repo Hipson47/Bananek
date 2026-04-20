@@ -42,7 +42,8 @@ Unless new evidence clearly contradicts it, the default product direction is:
 10. [security-and-risk-rules.md](security-and-risk-rules.md)
 11. [progress-tracking.md](progress-tracking.md)
 12. [open-questions-register.md](open-questions-register.md)
-13. [product-strategy-report.md](product-strategy-report.md)
+
+> Historical / archived documents are in [archive/](archive/). They are not part of the normal read order.
 
 ## Source Labels
 
@@ -75,11 +76,14 @@ Every major document should use these labels when relevant:
 - [progress-tracking.md](progress-tracking.md): shared status/update format
 - [working-memory.md](working-memory.md): compact handoff state
 
-### Strategic / historical
+### Strategic / historical (archived)
 
-- [specs/phase1-backend-proxy.md](specs/phase1-backend-proxy.md): completed Phase 1 implementation spec, now kept as historical/reference context
-- [architecture-recommendation.md](architecture-recommendation.md): pre-Phase-1 recommendation document, now archived as historical guidance
-- [product-strategy-report.md](product-strategy-report.md): strategic planning report; useful, but not a source of current-state truth
+The following documents have been moved to [archive/](archive/) and replaced with redirect tombstones. They are not current-state truth.
+
+- [archive/phase1-backend-proxy.md](archive/phase1-backend-proxy.md): original Phase 1 spec (described `/api/generate`; superseded by `/api/enhance` implementation)
+- [archive/architecture-recommendation.md](archive/architecture-recommendation.md): pre-Phase-1 recommendation
+- [archive/product-strategy-report.md](archive/product-strategy-report.md): pre-Phase-1 strategic planning report
+- [archive/nano-banana-playground-prd.md](archive/nano-banana-playground-prd.md): original playground PRD (superseded by enhancement product direction)
 
 ## Update Discipline
 

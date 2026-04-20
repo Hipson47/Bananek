@@ -8,7 +8,8 @@ export type EnhancementPreset = {
 
 export type EnhanceRequestBody = {
   presetId: PresetId;
-  image: string; // data:image/...;base64,...
+  image: string;    // data:image/...;base64,...
+  mimeType: string; // extracted during validation, e.g. "image/png"
 };
 
 export type ProcessedImageResult = {

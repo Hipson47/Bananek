@@ -61,6 +61,7 @@ export function validateEnhanceRequest(
     parsed: {
       presetId: obj.presetId,
       image: obj.image,
+      mimeType: mimeMatch[1], // already extracted — route doesn't need to re-parse
     },
   };
 }

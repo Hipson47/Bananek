@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ComparisonPanel } from "./components/ComparisonPanel";
 import { EmptyState } from "./components/EmptyState";
@@ -26,6 +26,7 @@ export default function App() {
   const [status, setStatus] = useState<ProcessingStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<ProcessedImageResult | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -76,6 +77,11 @@ export default function App() {
       return;
     }
 
+    // Cancel any in-flight request before starting a new one
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setStatus("processing");
     setErrorMessage(null);
     setResult(null);
@@ -84,11 +90,15 @@ export default function App() {
       const processedResult = await processor.processImage({
         file: selectedFile,
         preset: selectedPreset,
+        signal: controller.signal,
       });
 
       setResult(processedResult);
       setStatus("success");
     } catch (error) {
+      // Ignore aborts caused by a user-triggered reset
+      if (error instanceof DOMException && error.name === "AbortError") return;
+
       setStatus("error");
       setErrorMessage(
         error instanceof Error
@@ -99,6 +109,8 @@ export default function App() {
   }
 
   function handleReset() {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setSelectedFile(null);
     setSelectedPreset(PRESETS[0]);
     setStatus("idle");

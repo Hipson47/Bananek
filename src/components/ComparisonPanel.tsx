@@ -47,6 +47,14 @@ export function ComparisonPanel({
           <dd>{result.processorLabel}</dd>
         </div>
       </dl>
+
+      <a
+        className="download-button"
+        href={result.processedUrl}
+        download={result.filename}
+      >
+        Download enhanced image
+      </a>
     </section>
   );
 }

@@ -36,13 +36,15 @@ export async function processImage(
 
   // Return the original image unchanged until real processing is added.
   // The response metadata must therefore preserve the original format.
-  // Real processors will perform actual transformations here.
-  const base64 = imageBuffer.toString("base64");
+  // Real processors will perform actual transformation here.
+  const outputFilename = buildOutputFilename(presetId, originalMime);
+  const processedBase64 = imageBuffer.toString("base64");
+  const processedUrl = `data:${originalMime};base64,${processedBase64}`;
 
   return {
-    filename: buildOutputFilename(presetId, originalMime),
+    filename: outputFilename,
     mimeType: originalMime,
-    processedUrl: `data:${originalMime};base64,${base64}`,
+    processedUrl,
     processorLabel: "Backend mock enhancement pipeline",
   };
 }

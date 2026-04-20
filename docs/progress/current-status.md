@@ -2,11 +2,11 @@
 
 ## Current Objective
 
-Phase 1 backend proxy implemented and hardened. Next: add real image processing behind the established HTTP boundary.
+Phase 1 backend proxy implemented, hardened, and repo cleaned. Next: add real image processing behind the established HTTP boundary.
 
 ## Active Milestone
 
-Integration hardening after Phase 1 — complete
+Repo cleanup and integration hardening — complete
 
 ## Current State
 
@@ -17,6 +17,8 @@ Integration hardening after Phase 1 — complete
 - Backend mock processor returns the input image with a simulated delay and truthful output metadata
 - `MockImageProcessor` is no longer part of the active code path
 - `npm test` (root): 25 tests pass (7 frontend + 18 backend) when run with `TMPDIR=/tmp`
+  - frontend: 3 `validateImageFile` + 4 `backendProcessor`
+  - backend: 9 `validation` + 9 `enhance-route` (including health check)
 - `tsc --noEmit`: clean in both frontend and backend
 - `npm run build`: frontend production build succeeds
 
@@ -26,8 +28,9 @@ Integration hardening after Phase 1 — complete
 |---|---|---|---|
 | Runnable frontend slice | Frontend Agent | done | upload → preset → process → result flow |
 | Phase 1 backend proxy | Backend Agent | done | Hono server, enhance route, validation, mock processor, 18 tests |
-| Frontend ↔ backend wiring | Full Stack | done | BackendProcessor, Vite proxy, adapter coverage |
-| Integration hardening | Full Stack | done | truthful mock contract, docs sync, dead-path cleanup |
+| Frontend ↔ backend wiring | Full Stack | done | BackendProcessor, Vite proxy, abort control, adapter coverage |
+| Integration hardening | Full Stack | done | download button, drag-and-drop, AbortController, body limit, MIME dedup, error logging, startup validation |
+| Repo cleanup | Documentation | done | 4 stale docs archived, 4 docs updated, temp files noted |
 | Real image processing | Backend Agent | not_started | Replace mock processor with sharp-based or AI-backed processing |
 | Customer product mode | Product Strategy | not_started | target state only |
 

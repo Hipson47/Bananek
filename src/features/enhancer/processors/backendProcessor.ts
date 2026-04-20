@@ -4,22 +4,16 @@ import type {
   ProcessedImageResult,
 } from "../types";
 
-type BufferLike = {
-  from(data: Uint8Array): {
-    toString(encoding: "base64"): string;
-  };
-};
-
+/**
+ * Convert a Uint8Array to a base64 string.
+ *
+ * This runs in the browser only — Buffer is not available here.
+ * We chunk the input to avoid hitting the call-stack limit of
+ * String.fromCharCode for large images.
+ */
 function toBase64(bytes: Uint8Array): string {
-  const nodeBuffer = (globalThis as typeof globalThis & { Buffer?: BufferLike })
-    .Buffer;
-
-  if (nodeBuffer) {
-    return nodeBuffer.from(bytes).toString("base64");
-  }
-
   let binary = "";
-  const chunkSize = 0x8000;
+  const chunkSize = 0x8000; // 32 KB chunks
 
   for (let index = 0; index < bytes.length; index += chunkSize) {
     const chunk = bytes.subarray(index, index + chunkSize);
@@ -57,7 +51,8 @@ export class BackendProcessor implements ImageProcessor {
   async processImage({
     file,
     preset,
-  }: ProcessImageInput): Promise<ProcessedImageResult> {
+    signal,
+  }: ProcessImageInput & { signal?: AbortSignal }): Promise<ProcessedImageResult> {
     const dataUrl = await fileToDataUrl(file);
 
     let response: Response;
@@ -70,8 +65,11 @@ export class BackendProcessor implements ImageProcessor {
           presetId: preset.id,
           image: dataUrl,
         }),
+        signal,
       });
-    } catch {
+    } catch (err) {
+      // Re-throw AbortError so the caller can distinguish cancellation
+      if (err instanceof DOMException && err.name === "AbortError") throw err;
       throw new Error("Could not reach the enhancement service.");
     }
 

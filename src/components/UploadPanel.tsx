@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
 import { validateImageFile } from "../features/enhancer/lib/validateImageFile";
 
@@ -18,10 +18,9 @@ export function UploadPanel({
   onFileSelect,
 }: UploadPanelProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
-  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
-    const nextFile = event.target.files?.[0] ?? null;
-
+  function handleFile(nextFile: File | null) {
     if (!nextFile) {
       onFileSelect(null);
       return;
@@ -30,7 +29,6 @@ export function UploadPanel({
     const validationError = validateImageFile(nextFile);
 
     if (validationError) {
-      event.target.value = "";
       onFileSelect(null);
       onValidationError(validationError);
       return;
@@ -38,6 +36,52 @@ export function UploadPanel({
 
     onFileSelect(nextFile);
   }
+
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+    const nextFile = event.target.files?.[0] ?? null;
+    if (!nextFile) {
+      onFileSelect(null);
+      return;
+    }
+    const validationError = validateImageFile(nextFile);
+    if (validationError) {
+      event.target.value = "";
+      onFileSelect(null);
+      onValidationError(validationError);
+      return;
+    }
+    onFileSelect(nextFile);
+  }
+
+  function handleDragOver(event: React.DragEvent<HTMLDivElement>) {
+    if (processing) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  }
+
+  function handleDragLeave(event: React.DragEvent<HTMLDivElement>) {
+    // Only clear drag state when leaving the dropzone entirely (not a child)
+    if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+      setIsDragOver(false);
+    }
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsDragOver(false);
+    if (processing) return;
+    const dropped = event.dataTransfer.files[0] ?? null;
+    handleFile(dropped);
+  }
+
+  const dropzoneClass = [
+    "upload-dropzone",
+    previewUrl ? "has-preview" : "",
+    isDragOver ? "is-drag-over" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <section className="panel">
@@ -49,14 +93,17 @@ export function UploadPanel({
       </div>
 
       <div
-        className={`upload-dropzone${previewUrl ? " has-preview" : ""}`}
-        onClick={() => inputRef.current?.click()}
+        className={dropzoneClass}
+        onClick={() => !processing && inputRef.current?.click()}
         onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
-            inputRef.current?.click();
+            if (!processing) inputRef.current?.click();
           }
         }}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         role="button"
         tabIndex={0}
         aria-disabled={processing}
@@ -80,7 +127,9 @@ export function UploadPanel({
           </div>
         ) : (
           <div className="upload-empty">
-            <strong>Click to select a product photo</strong>
+            <strong>
+              {isDragOver ? "Drop to upload" : "Click or drag a product photo here"}
+            </strong>
             <span>Supports PNG, JPEG, and WEBP up to 10 MB.</span>
           </div>
         )}

@@ -14,8 +14,8 @@ app.use(
   cors({ origin: config.allowedOrigins }),
 );
 
-// Body size limit — 15 MB is generous for a single image as data URL
-app.use("/api/*", bodyLimit({ maxSize: 15 * 1024 * 1024 }));
+// Body size limit — 20 MB backstop (single 10 MB image encodes to ~13.3 MB base64 + JSON overhead)
+app.use("/api/*", bodyLimit({ maxSize: 20 * 1024 * 1024 }));
 
 // Routes
 app.route("/api", enhanceRouter);

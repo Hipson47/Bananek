@@ -2,7 +2,7 @@
 
 ## Current Objective
 
-Phase 1 backend proxy is implemented. Harden the current boundary and prepare for real backend processing.
+Phase 1 backend proxy is implemented, hardened, and the repo is cleaned. Next: replace the mock processor with real image processing.
 
 ## Decisions
 
@@ -12,22 +12,26 @@ Phase 1 backend proxy is implemented. Harden the current boundary and prepare fo
 - Code, tests, and explicit decisions outrank strategy documents (DEC-002).
 - Documentation must separate current state from target state and historical/planning material (DEC-011).
 - Phase 1 backend uses Node.js + Hono + TypeScript (DEC-009).
-- Phase 1 spec (written for the original playground codebase) was adapted to the current customer-mode enhancement app during implementation.
 
 ## Active Constraints
 
 - The backend mock processor returns images without transformation — proving the HTTP pipeline, not image processing.
 - The next milestone is real backend processing, likely `sharp` first, with any later AI provider integration behind the same `/api/enhance` endpoint.
-- The original Phase 1 spec is now historical context, not an implementation to-do list.
+- The original Phase 1 spec described a different system (POST /api/generate) and is archived in `docs/archive/`.
 
-## Files/Systems Touched
+## Files/Systems Touched (recent)
 
-- `backend/` — new directory: Hono server, mock processor, enhance route, validation, types, presets, tests
-- `src/features/enhancer/processors/backendProcessor.ts` — frontend adapter calling `/api/enhance`
-- `src/App.tsx` — active app wired to `BackendProcessor`
-- `vite.config.ts` — modified: added dev proxy `/api` → `localhost:3001`
-- `docs/working-memory.md`
-- `docs/progress/current-status.md`
+- `backend/src/config.ts` — added `requireEnv` / `optionalEnv` pattern with PORT validation
+- `backend/src/index.ts` — body limit raised to 20 MB
+- `backend/src/validation.ts` — returns `mimeType` in parsed result (no second regex in route)
+- `backend/src/routes/enhance.ts` — removed MIME duplication, added `console.error` for unexpected errors
+- `backend/src/processors/mock-processor.ts` — restored from truncation, fully complete
+- `backend/tests/enhance-route.test.ts` — restored from truncation, 9 tests
+- `src/App.tsx` — AbortController for in-flight request cancellation on reset
+- `src/components/ComparisonPanel.tsx` — download button
+- `src/components/UploadPanel.tsx` — drag-and-drop support
+- `src/features/enhancer/processors/backendProcessor.ts` — simplified toBase64, signal passthrough
+- `docs/archive/` — created; 4 stale docs moved here
 
 ## Open Risks
 
@@ -37,6 +41,6 @@ Phase 1 backend proxy is implemented. Harden the current boundary and prepare fo
 
 ## Next Exact Step
 
-1. Replace the backend mock processor with real processing, likely `sharp`.
+1. Replace the backend mock processor with real processing, likely `sharp` for deterministic transforms.
 2. Keep the same `BackendProcessor` and `/api/enhance` seam while the backend implementation changes.
 3. Decide where later AI-provider integration should plug in behind that same seam.

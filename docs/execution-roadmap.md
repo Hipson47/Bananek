@@ -21,7 +21,7 @@ Create shared docs, role boundaries, and a stable project narrative.
 
 ### Status
 
-- `Verified Fact`: this phase is the current task
+- `Verified Fact`: complete — documentation system, role map, workstream map, and progress tracking are in place
 
 ### Deliverables
 
@@ -36,17 +36,21 @@ Create shared docs, role boundaries, and a stable project narrative.
 
 Move from browser-playground behavior to a backend-controlled enhancement pipeline.
 
+### Status
+
+- `Verified Fact`: complete — Hono backend with `POST /api/enhance`, mock processor, validation, 25 passing tests (7 frontend + 18 backend), frontend wired via BackendProcessor and Vite proxy
+
 ### Deliverables
 
-- backend scaffold
-- server-side provider routing
-- customer-safe enhancement contract
-- separation between product mode and internal playground mode
+- backend scaffold ✓
+- server-side provider routing (mock processor in place; real processing is next)
+- customer-safe enhancement contract ✓ (`/api/enhance` with preset-based flow)
+- separation between product mode and internal playground mode (frontend separation done; playground isolation not yet formal)
 
 ### Blockers Removed
 
-- provider keys in browser
-- prompt-first UX coupling
+- provider keys in browser ✓
+- prompt-first UX coupling ✓
 
 ## Phase 2 — First Paid Workflow
 
@@ -79,15 +83,13 @@ Make the first workflow trustworthy enough for real users.
 
 ### Now
 
-- keep docs aligned with current filesystem reality
-- restore or rehydrate a complete source baseline
-- only then resume implementation work
+- replace backend mock processor with real image processing (`sharp`-based transforms)
+- keep the same `/api/enhance` contract while evolving backend internals
 
 ### Next
 
-- implement backend orchestration
-- create enhancement task contract
-- preserve or isolate internal playground
+- decide whether first real-processing step is deterministic ops only or an AI-backed preset pipeline
+- wire AI provider behind the established backend seam (not in browser)
 
 ### Later
 

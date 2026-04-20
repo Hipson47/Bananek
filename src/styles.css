@@ -202,6 +202,13 @@ img {
   transform: translateY(-1px);
 }
 
+.upload-dropzone.is-drag-over {
+  border-color: #f0782d;
+  background: rgba(240, 120, 45, 0.06);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
 .upload-empty,
 .upload-preview {
   display: grid;
@@ -396,48 +403,25 @@ img {
   margin: 8px 0 0;
 }
 
+.download-button {
+  display: block;
+  margin-top: 16px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f0782d, #d95c1d);
+  color: white;
+  font-weight: 700;
+  text-align: center;
+  text-decoration: none;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+
+.download-button:hover,
+.download-button:focus-visible {
+  transform: translateY(-1px);
+  opacity: 0.9;
+}
+
 .empty-panel {
   min-height: 100%;
-}
-
-.empty-card {
-  margin-top: 18px;
-  display: grid;
-  gap: 6px;
-  padding: 18px;
-  border-radius: 20px;
-  background: rgba(255, 245, 236, 0.8);
-}
-
-@media (max-width: 1024px) {
-  .hero,
-  .workspace {
-    grid-template-columns: 1fr;
-  }
-
-  .workspace-sidebar {
-    order: -1;
-  }
-}
-
-@media (max-width: 720px) {
-  .app-shell {
-    width: min(100% - 20px, 100%);
-    padding: 24px 0 32px;
-  }
-
-  .hero-copy,
-  .hero-card,
-  .panel {
-    border-radius: 24px;
-  }
-
-  .comparison-grid,
-  .result-meta {
-    grid-template-columns: 1fr;
-  }
-
-  .action-bar {
-    padding: 18px;
-  }
 }
