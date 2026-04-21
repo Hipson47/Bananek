@@ -1,6 +1,7 @@
 import sharp from "sharp";
 
 import type { PresetId, ProcessedImageResult } from "../types.js";
+import { getCustomerProcessorLabel } from "./customer-label.js";
 
 /**
  * Phase 2 real image processor — powered by sharp / libvips.
@@ -127,6 +128,6 @@ export async function processImage(
     filename: `product-${presetId}.${ext}`,
     mimeType: originalMime,
     processedUrl,
-    processorLabel: `sharp ${sharp.versions.sharp} — ${presetId}`,
+    processorLabel: getCustomerProcessorLabel(presetId),
   };
 }

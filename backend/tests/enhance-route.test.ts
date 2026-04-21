@@ -1,4 +1,4 @@
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 
 import { enhanceRouter } from "../src/routes/enhance.js";
@@ -36,6 +36,8 @@ const TINY_WEBP =
 // ---------------------------------------------------------------------------
 
 const originalProcessor = process.env.PROCESSOR;
+const originalProcessorFallback = process.env.PROCESSOR_FALLBACK;
+const originalFalApiKey = process.env.FAL_API_KEY;
 
 beforeAll(() => {
   process.env.PROCESSOR = "mock";
@@ -47,6 +49,25 @@ afterAll(() => {
   } else {
     process.env.PROCESSOR = originalProcessor;
   }
+
+  if (originalProcessorFallback === undefined) {
+    delete process.env.PROCESSOR_FALLBACK;
+  } else {
+    process.env.PROCESSOR_FALLBACK = originalProcessorFallback;
+  }
+
+  if (originalFalApiKey === undefined) {
+    delete process.env.FAL_API_KEY;
+  } else {
+    process.env.FAL_API_KEY = originalFalApiKey;
+  }
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  process.env.PROCESSOR = "mock";
+  delete process.env.PROCESSOR_FALLBACK;
+  delete process.env.FAL_API_KEY;
 });
 
 // ---------------------------------------------------------------------------
@@ -94,7 +115,7 @@ describe("POST /api/enhance", () => {
     const body = await res.json();
     expect(body).toHaveProperty("filename", "product-clean-background.png");
     expect(body).toHaveProperty("mimeType", "image/png");
-    expect(body).toHaveProperty("processorLabel");
+    expect(body).toHaveProperty("processorLabel", "Clean Background enhancement");
     expect(body.processedUrl).toMatch(/^data:image\/png;base64,/);
   });
 
@@ -109,6 +130,7 @@ describe("POST /api/enhance", () => {
     const body = await res.json();
     expect(body.filename).toBe("product-marketplace-ready.jpg");
     expect(body.mimeType).toBe("image/jpeg");
+    expect(body.processorLabel).toBe("Marketplace Ready enhancement");
     expect(body.processedUrl).toMatch(/^data:image\/jpeg;base64,/);
   });
 
@@ -123,7 +145,45 @@ describe("POST /api/enhance", () => {
     const body = await res.json();
     expect(body.filename).toBe("product-studio-polish.webp");
     expect(body.mimeType).toBe("image/webp");
+    expect(body.processorLabel).toBe("Studio Polish enhancement");
     expect(body.processedUrl).toMatch(/^data:image\/webp;base64,/);
+  });
+
+  it("falls back to sharp when PROCESSOR=fal and FAL_API_KEY is missing", async () => {
+    process.env.PROCESSOR = "fal";
+    process.env.PROCESSOR_FALLBACK = "sharp";
+    delete process.env.FAL_API_KEY;
+
+    const app = createApp();
+    const res = await post(app, "/api/enhance", {
+      presetId: "clean-background",
+      image: TINY_PNG,
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.processorLabel).toBe("Clean Background enhancement");
+    expect(body.processedUrl).toMatch(/^data:image\/png;base64,/);
+  });
+
+  it("returns a customer-safe 500 when fallback is disabled and processing fails", async () => {
+    process.env.PROCESSOR = "fal";
+    process.env.PROCESSOR_FALLBACK = "none";
+    process.env.FAL_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+
+    const app = createApp();
+    const res = await post(app, "/api/enhance", {
+      presetId: "marketplace-ready",
+      image: TINY_PNG,
+    });
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.kind).toBe("processing");
+    expect(body.error.message).toBe(
+      "We couldn't complete this enhancement. Try again or use a different product image.",
+    );
   });
 
   it("returns 400 for missing preset", async () => {

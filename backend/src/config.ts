@@ -30,9 +30,11 @@ if (rawProcessor !== "mock" && rawProcessor !== "sharp" && rawProcessor !== "fal
   );
 }
 
-// Fail fast at startup if FAL_API_KEY is missing when the FAL processor is selected.
-if (rawProcessor === "fal") {
-  requireEnv("FAL_API_KEY");
+const rawProcessorFallback = optionalEnv("PROCESSOR_FALLBACK", "sharp");
+if (rawProcessorFallback !== "none" && rawProcessorFallback !== "sharp") {
+  throw new Error(
+    `Invalid PROCESSOR_FALLBACK value: "${rawProcessorFallback}". Must be "sharp" or "none".`,
+  );
 }
 
 export const config = {
@@ -45,6 +47,12 @@ export const config = {
    *   mock   -- no-op; returns original bytes unchanged; for contract-only tests
    */
   processor: rawProcessor as "sharp" | "mock" | "fal",
+  /**
+   * Which processor to fall back to when the active processor cannot finish.
+   * Default is "sharp" so the product path stays coherent if the AI provider
+   * is unavailable.
+   */
+  processorFallback: rawProcessorFallback as "sharp" | "none",
 };
 
 // Export requireEnv / optionalEnv so processors and routes can use the same

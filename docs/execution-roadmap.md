@@ -78,9 +78,40 @@ Replace or augment sharp with an AI provider for preset-based enhancement.
 
 ### Status
 
-- `Verified Fact`: complete -- FAL.ai processor; background-removal + FLUX Kontext; 17 tests; PROCESSOR=fal; FAL_API_KEY startup validation
+- `Verified Fact`: complete -- FAL.ai processor implemented; `PROCESSOR=fal` is supported; runtime can fall back to `sharp` when configured; provider/model details stay hidden from customer UI
 
 ### Deliverables
 
-- AI provider processor behind the same `/api/enhance` seam
-- PROCESSOR=ai-{provider} env var
+- AI provider processor behind the same `/api/enhance` seam ✓
+- `PROCESSOR=fal` env var selection ✓
+- preset-specific orchestration for background cleanup and marketplace enhancement ✓
+- backend-owned provider secret handling via `FAL_API_KEY` ✓
+- customer-safe API errors and metadata that do not expose provider/model details ✓
+- optional runtime fallback via `PROCESSOR_FALLBACK=sharp` ✓
+
+## Phase 4 — MVP Hardening
+
+### Goal
+
+Make the implemented product path coherent enough for MVP preparation without changing the public enhancement contract.
+
+### Status
+
+- `Verified Fact`: complete -- active customer path is preset-based frontend -> `/api/enhance` -> backend processor seam (`sharp`, `fal`, or `mock`), with test coverage and customer-safe error handling
+
+### Deliverables
+
+- stable `/api/enhance` contract across processor strategies ✓
+- frontend wired only to backend adapter ✓
+- provider/model details removed from customer-facing UI ✓
+- runtime fallback behavior for AI processing failures ✓
+- truthful `.env.example` for current runtime modes ✓
+- docs synchronized to current implementation and next-step reality ✓
+
+## Next Decision Layer
+
+The next product decision is no longer "whether to add a backend" or "whether to add AI support."
+It is:
+
+- which processor strategy should be the default production mode for launch: `sharp`, `fal`, or a hybrid rollout
+- what storage, billing, and delivery layer should wrap the existing enhancement path

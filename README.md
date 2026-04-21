@@ -15,8 +15,10 @@ Runnable product-photo enhancement slice for an automation-first e-commerce work
   - send the image to `/api/enhance`
   - receive and render a genuinely transformed result
 - Vite proxies `/api/*` to the backend in local development
-- the backend uses a real sharp-based processor (auto-orient, resize, flatten, modulate, sharpen)
-- set `PROCESSOR=mock` to run without real transforms (dev / contract testing only)
+- the backend supports three processor modes behind the same `/api/enhance` contract:
+  - `sharp` (default): deterministic preset transforms
+  - `fal`: AI-backed preset transforms with optional fallback to `sharp`
+  - `mock`: contract-only no-op processing for dev/tests
 
 ## Current Product Flow
 
@@ -24,7 +26,7 @@ The app is a narrow customer-mode slice, not a prompt playground. It supports:
 
 1. upload one product photo
 2. choose one predefined enhancement preset
-3. process through the backend (sharp transforms applied per preset)
+3. process through the backend (sharp or FAL.ai behind the same preset-based contract)
 4. compare original vs processed output
 5. download the result
 
@@ -37,7 +39,6 @@ This keeps the product aligned with the intended customer experience:
 
 ## What Is Not Implemented Yet
 
-- AI-provider integration behind the backend seam
 - auth, billing, credits, storage, jobs, or delivery controls
 - production deployment infrastructure
 
@@ -64,14 +65,35 @@ In this WSL environment, tests need `TMPDIR=/tmp`.
 
 ```bash
 TMPDIR=/tmp npm test
+TMPDIR=/tmp npm --prefix backend test
 npm run build
+npx tsc --noEmit -p backend/tsconfig.json
+```
+
+Backend environment:
+
+```bash
+cp backend/.env.example backend/.env
 ```
 
 ## Phase Status
 
 - Phase 1 — backend proxy and frontend wiring: **complete**
-- Phase 2 — real image processing via sharp: **complete** (39 tests passing)
-- Phase 3 — AI-provider integration behind `/api/enhance`: **not started**
+- Phase 2 — real image processing via sharp: **complete**
+- Phase 3 — AI-provider integration via FAL.ai behind `/api/enhance`: **complete**
+- MVP product-path hardening: **complete**
+
+## Processor Strategy
+
+- `PROCESSOR=sharp`: deterministic preset processing, no external provider required
+- `PROCESSOR=fal`: AI-backed processing via FAL.ai; if provider execution fails and `PROCESSOR_FALLBACK=sharp`, the request falls back to sharp
+- `PROCESSOR=mock`: unchanged bytes, useful for contract-only tests
+
+Customer-facing behavior remains provider-safe:
+
+- no prompts in the UI
+- no provider/model names shown in the UI
+- no secrets in the browser
 
 ## Repo Guide
 

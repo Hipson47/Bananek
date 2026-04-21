@@ -16,7 +16,7 @@
   - `src/App.tsx`
   - `src/features/enhancer/processors/backendProcessor.ts`
   - `POST /api/enhance`
-  - `backend/src/processors/index.ts` (selects sharp or mock via PROCESSOR env var)
+  - `backend/src/processors/index.ts` (selects `sharp`, `fal`, or `mock` via env)
 - the frontend no longer uses browser-side mock processing as the active path
 - local development uses a Vite proxy from `/api` to the backend
 
@@ -24,8 +24,8 @@
 
 - the frontend owns upload, preset selection, progress UI, and result rendering
 - the backend owns request validation and processing orchestration
-- the current processor is sharp-based; real transforms applied per preset; PROCESSOR=mock available for dev
-- provider details and future server-side processing remain hidden from the browser
+- the default processor is `sharp`; `fal` is available as an AI-backed option and `mock` remains available for contract-only testing
+- provider details remain hidden from customer-facing UI and response messaging
 
 ## Key Systems And Boundaries
 
@@ -64,16 +64,17 @@ Does not yet own:
 2. Customer selects one predefined preset.
 3. Frontend serializes the file and calls `POST /api/enhance`.
 4. Backend validates the request.
-5. Sharp processor applies preset transforms (auto-orient, resize, flatten, modulate, sharpen) and returns the result.
-6. Frontend renders the returned result.
+5. Backend selects the active processor strategy.
+6. `sharp` applies deterministic transforms or `fal` performs AI-backed enhancement and can fall back to `sharp`.
+7. Frontend renders the returned result.
 
 ## Near-Term Target
 
-The existing frontend/backend seam is stable. The next milestone is AI-provider integration:
+The existing frontend/backend seam is stable. The next milestone is not provider integration itself, but productisation around the current path:
 
 1. keep `POST /api/enhance` as the stable customer-facing contract (already stable)
-2. add an AI-provider processor behind the existing seam (PROCESSOR=ai-{provider})
-3. sharp processor remains available as the deterministic fallback
+2. choose a production processor strategy (`sharp`, `fal`, or hybrid)
+3. keep `sharp` available as the deterministic fallback
 4. add storage, jobs, billing, and delivery only in later phases
 
 ## Architecture Decision Constraints

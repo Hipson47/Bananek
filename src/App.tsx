@@ -132,8 +132,8 @@ export default function App() {
             <span className="hero-stat-label">commerce presets</span>
           </div>
           <div className="hero-stat">
-            <span className="hero-stat-value">&lt; 3s</span>
-            <span className="hero-stat-label">mock pipeline target</span>
+            <span className="hero-stat-value">3</span>
+            <span className="hero-stat-label">real enhancement paths</span>
           </div>
         </div>
       </section>

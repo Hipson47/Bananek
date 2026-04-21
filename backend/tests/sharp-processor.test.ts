@@ -63,7 +63,7 @@ describe("sharp processor — response contract", () => {
     expect(result.filename).toBe("product-clean-background.png");
     expect(result.mimeType).toBe("image/png");
     expect(result.processedUrl).toMatch(/^data:image\/png;base64,/);
-    expect(result.processorLabel).toContain("sharp");
+    expect(result.processorLabel).toBe("Clean Background enhancement");
   });
 
   it("returns correct filename, mimeType and data URL prefix for JPEG", async () => {
@@ -73,7 +73,7 @@ describe("sharp processor — response contract", () => {
     expect(result.filename).toBe("product-marketplace-ready.jpg");
     expect(result.mimeType).toBe("image/jpeg");
     expect(result.processedUrl).toMatch(/^data:image\/jpeg;base64,/);
-    expect(result.processorLabel).toContain("sharp");
+    expect(result.processorLabel).toBe("Marketplace Ready enhancement");
   });
 
   it("returns correct filename, mimeType and data URL prefix for WebP", async () => {
@@ -83,7 +83,7 @@ describe("sharp processor — response contract", () => {
     expect(result.filename).toBe("product-studio-polish.webp");
     expect(result.mimeType).toBe("image/webp");
     expect(result.processedUrl).toMatch(/^data:image\/webp;base64,/);
-    expect(result.processorLabel).toContain("sharp");
+    expect(result.processorLabel).toBe("Studio Polish enhancement");
   });
 });
 

@@ -42,10 +42,6 @@ export function ComparisonPanel({
           <dt>Output</dt>
           <dd>{result.filename}</dd>
         </div>
-        <div>
-          <dt>Pipeline</dt>
-          <dd>{result.processorLabel}</dd>
-        </div>
       </dl>
 
       <a

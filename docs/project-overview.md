@@ -4,7 +4,7 @@
 
 - `Verified Fact`: a runnable Vite + React + TypeScript frontend for a preset-based product photo enhancement workflow
 - `Verified Fact`: a runnable Node.js + Hono + TypeScript backend in `backend/`
-- `Verified Fact`: a repository with Phase 1 (backend proxy) and Phase 2 (sharp real processing) implemented, plus active docs
+- `Verified Fact`: a repository with Phase 1 (backend proxy), Phase 2 (sharp processing), and Phase 3 (FAL.ai integration) implemented
 - `Verified Fact`: a project evolving toward a narrow, monetizable, automation-first e-commerce photo product
 
 ## What This Project Is Not
@@ -33,7 +33,7 @@
 - `backend/` is present and contains the active API server
 - the active enhancement path is `App.tsx` -> `BackendProcessor` -> `/api/enhance`
 - Vite proxies `/api` to the backend in local development
-- the backend sharp processor applies per-preset transforms and returns genuinely different output (auto-orient, resize, modulate, sharpen)
+- the backend supports `sharp`, `fal`, and `mock` behind the same `/api/enhance` contract
 - backend route and validation tests exist
 - frontend tests now cover the `BackendProcessor` request/response contract
 
@@ -42,18 +42,19 @@
 - the core customer flow exists end-to-end: upload -> preset -> process -> result
 - the browser no longer owns the primary processing path
 - the backend boundary is explicit and isolated from the UI
-- the codebase is positioned for real processing behind the existing backend seam
+- the codebase now has one coherent product path with deterministic default processing and AI-backed augmentation behind the same seam
 
 ### Current Constraints
 
-- processing uses sharp for deterministic per-preset transforms; AI-provider integration is the next step
 - there is no auth, billing, storage, queueing, or delivery flow yet
-- no AI provider is wired into the active product path yet
+- AI-backed processing is available, but production routing/cost strategy is still an operational decision
+- results are still returned inline as `data:` URLs rather than stored assets
 
 ## Near-Term Next Step
 
-- `Verified Fact`: sharp-based real processing is implemented for all three presets (clean-background, marketplace-ready, studio-polish)
-- `Proposal`: integrate an AI provider behind the same `POST /api/enhance` seam as the next backend milestone
+- `Verified Fact`: `sharp` and FAL.ai both sit behind the same `POST /api/enhance` seam
+- `Proposal`: decide whether production should prefer `sharp`, `fal`, or a per-preset hybrid strategy
+- `Proposal`: add billing/storage/delivery only after processor strategy is chosen
 
 ## Historical / Reference Context
 

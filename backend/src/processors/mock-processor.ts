@@ -1,4 +1,5 @@
 import type { PresetId, ProcessedImageResult } from "../types.js";
+import { getCustomerProcessorLabel } from "./customer-label.js";
 
 /**
  * Server-side mock processor.
@@ -45,6 +46,6 @@ export async function processImage(
     filename: outputFilename,
     mimeType: originalMime,
     processedUrl,
-    processorLabel: "Backend mock enhancement pipeline",
+    processorLabel: getCustomerProcessorLabel(presetId),
   };
 }

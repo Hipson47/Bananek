@@ -2,13 +2,13 @@
 
 ## Current Objective
 
-Phase 3 AI integration implemented via FAL.ai. The `/api/enhance` endpoint now supports
-real AI-powered preset processing. Sharp processor is retained as default and fallback.
+Phase 3 AI integration implemented via FAL.ai and hardened for MVP. The `/api/enhance`
+endpoint now supports deterministic default processing plus AI-backed processing with safe fallback.
 Next: production processor strategy decision and billing/delivery controls.
 
 ## Active Milestone
 
-Phase 3 -- AI provider integration via FAL.ai -- complete
+MVP product-path implementation -- coherent
 
 ## Current State
 
@@ -18,11 +18,13 @@ Phase 3 -- AI provider integration via FAL.ai -- complete
 - Vite dev proxy routes `/api` -> `localhost:3001`
 - **Three processors available**, selected via `PROCESSOR` env var:
   - `sharp` (default): deterministic libvips transforms, no API key required
-  - `fal`: AI transforms via FAL.ai (background-removal + FLUX Kontext), requires `FAL_API_KEY`
+  - `fal`: AI transforms via FAL.ai (background-removal + FLUX Kontext), can fall back to `sharp`
   - `mock`: original bytes returned unchanged, for contract-only tests
-- `npm test` (root): 56 tests pass (7 frontend + 49 backend)
+- customer-facing UI no longer exposes provider/model details
+- processing failures now return customer-safe messages; provider failures can fall back to `sharp`
+- `npm test` (root): 58 tests pass (7 frontend + 51 backend)
   - frontend: 3 `validateImageFile` + 4 `backendProcessor`
-  - backend: 9 `validation` + 9 `enhance-route` + 14 `sharp-processor` + 17 `fal-processor`
+  - backend: 9 `validation` + 11 `enhance-route` + 14 `sharp-processor` + 17 `fal-processor`
 - `tsc --noEmit`: clean in both frontend and backend
 - `npm run build`: frontend production build succeeds
 
@@ -57,7 +59,8 @@ response contract remains identical to the sharp processor.
 | Integration hardening | Full Stack | done | download, drag-and-drop, AbortController, body limit |
 | Repo cleanup | Documentation | done | stale docs archived, all active docs updated |
 | Real image processing (Phase 2) | Backend Agent | done | sharp processor, 3 presets, 14 tests |
-| AI-provider integration (Phase 3) | Backend Agent | done | FAL.ai, 3 presets, 17 tests, error mapping |
+| AI-provider integration (Phase 3) | Backend Agent | done | FAL.ai, 3 presets, 17 tests, provider-safe path |
+| MVP hardening | Full Stack | done | customer-safe labels/errors, fallback, env/docs alignment |
 | Billing / credits / storage | Product | not_started | next milestone |
 | Customer product mode | Product Strategy | not_started | target state only |
 
@@ -67,6 +70,6 @@ None.
 
 ## Next Action
 
-1. Choose production processor: sharp (stable, free), fal (AI quality, paid), or per-preset hybrid
-2. Add billing/credit tracking if FAL is used in production
-3. Add output storage (S3/R2) if inline data URLs become too large
+1. Choose production processor: `sharp` (stable), `fal` (AI quality/cost), or per-preset hybrid
+2. Add billing/credit tracking if `fal` is used in production
+3. Add output storage (S3/R2) if inline data URLs become too large for the intended download path

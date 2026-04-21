@@ -158,7 +158,7 @@ describe("fal processor — clean-background", () => {
     expect(result.filename).toBe("product-clean-background.png");
     expect(result.mimeType).toBe("image/png");
     expect(result.processedUrl).toMatch(/^data:image\/png;base64,/);
-    expect(result.processorLabel).toContain("background-removal");
+    expect(result.processorLabel).toBe("Clean Background enhancement");
   });
 
   it("returns correct metadata for JPEG input", async () => {
@@ -197,7 +197,7 @@ describe("fal processor — marketplace-ready", () => {
     expect(result.filename).toBe("product-marketplace-ready.jpg");
     expect(result.mimeType).toBe("image/jpeg");
     expect(result.processedUrl).toMatch(/^data:image\/jpeg;base64,/);
-    expect(result.processorLabel).toContain("kontext");
+    expect(result.processorLabel).toBe("Marketplace Ready enhancement");
   });
 });
 

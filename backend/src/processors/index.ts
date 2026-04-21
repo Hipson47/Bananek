@@ -25,8 +25,20 @@ export function processImage(
   presetId: PresetId,
 ): Promise<ProcessedImageResult> {
   const proc = process.env.PROCESSOR;
+  const fallback = process.env.PROCESSOR_FALLBACK?.trim() === "none"
+    ? "none"
+    : "sharp";
   if (proc === "mock") return mockProcessImage(imageBuffer, originalMime, presetId);
-  if (proc === "fal") return falProcessImage(imageBuffer, originalMime, presetId);
+  if (proc === "fal") {
+    return falProcessImage(imageBuffer, originalMime, presetId).catch((error) => {
+      if (fallback !== "sharp") {
+        throw error;
+      }
+
+      console.warn("[processor] FAL processor failed; falling back to sharp.", error);
+      return sharpProcessImage(imageBuffer, originalMime, presetId);
+    });
+  }
   return sharpProcessImage(imageBuffer, originalMime, presetId);
 }
 

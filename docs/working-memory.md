@@ -2,9 +2,9 @@
 
 ## Current Objective
 
-Phase 3 AI integration is implemented via FAL.ai behind the existing /api/enhance seam.
-The frontend, route contract, and sharp processor are all unchanged.
-Next: choose whether to route specific presets to FAL vs sharp in production, or add billing/delivery.
+Phase 3 AI integration is implemented via FAL.ai behind the existing `/api/enhance` seam.
+The current rollout hardened the customer product path with provider-safe metadata and `fal -> sharp` fallback behaviour.
+Next: choose the production processor strategy, then add billing/storage only if needed.
 
 ## Decisions
 
@@ -22,22 +22,22 @@ Next: choose whether to route specific presets to FAL vs sharp in production, or
 
 - /api/enhance contract is stable and public; do not change response shape.
 - Output MIME type is preserved from input regardless of processor.
-- FAL_API_KEY must be set when PROCESSOR=fal; validated at server startup.
-- Provider details (model names, prompts) are hidden from frontend.
+- Provider details (model names, prompts) are hidden from customer-facing UI and response messaging.
+- `PROCESSOR=fal` can fall back to `sharp` via `PROCESSOR_FALLBACK=sharp` when provider execution fails.
 
 ## Processor Selection
 
 | PROCESSOR | Behaviour | Key required |
 |---|---|---|
 | sharp (default) | Deterministic libvips transforms | No |
-| fal | AI transforms via FAL.ai | FAL_API_KEY |
+| fal | AI transforms via FAL.ai, with optional sharp fallback | FAL_API_KEY |
 | mock | Original bytes returned unchanged | No |
 
 ## Files/Systems Touched (recent)
 
 - `backend/src/processors/fal-processor.ts` -- new; FAL.ai AI processor
 - `backend/src/processors/index.ts` -- updated; supports sharp/fal/mock selection
-- `backend/src/config.ts` -- updated; "fal" valid PROCESSOR value, startup FAL_API_KEY check
+- `backend/src/config.ts` -- updated; `PROCESSOR_FALLBACK` support
 - `backend/tests/fal-processor.test.ts` -- new; 17 tests (presets, auth header, error mapping)
 
 ## Open Risks
@@ -49,6 +49,6 @@ Next: choose whether to route specific presets to FAL vs sharp in production, or
 
 ## Next Exact Step
 
-1. Decide on production processor strategy: sharp always, fal always, or per-preset hybrid.
-2. Add billing/credits tracking if FAL is used in production.
-3. Add output storage (S3/R2) for larger results if needed.
+1. Decide on production processor strategy: `sharp` always, `fal` always, or per-preset hybrid.
+2. Add billing/credits tracking if `fal` is used in production.
+3. Add output storage (S3/R2) if inline data URLs become too large for the real asset path.

@@ -5,6 +5,23 @@ import { processImage } from "../processors/index.js";
 import { isAppError, validateEnhanceRequest } from "../validation.js";
 
 const router = new Hono();
+const PROCESSING_FAILURE_MESSAGE =
+  "We couldn't complete this enhancement. Try again or use a different product image.";
+
+function toPublicAppError(err: unknown) {
+  const appError = isAppError(err)
+    ? err
+    : { kind: "processing" as const, message: "Image processing failed." };
+
+  if (appError.kind === "validation") {
+    return appError;
+  }
+
+  return {
+    kind: "processing" as const,
+    message: PROCESSING_FAILURE_MESSAGE,
+  };
+}
 
 router.get("/health", (c) => c.json({ status: "ok" }));
 
@@ -50,12 +67,8 @@ router.post("/enhance", async (c) => {
 
     return c.json(processed, 200);
   } catch (err) {
-    if (!isAppError(err)) {
-      console.error("[enhance] Unexpected error during processImage:", err);
-    }
-    const appError = isAppError(err)
-      ? err
-      : { kind: "processing" as const, message: "Image processing failed." };
+    console.error("[enhance] Processing failed:", err);
+    const appError = toPublicAppError(err);
 
     return c.json({ error: appError }, 500);
   }

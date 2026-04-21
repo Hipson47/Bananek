@@ -2,6 +2,7 @@ import sharp from "sharp";
 
 import { requireEnv } from "../config.js";
 import type { PresetId, ProcessedImageResult } from "../types.js";
+import { getCustomerProcessorLabel } from "./customer-label.js";
 
 /**
  * Phase 3 AI processor -- powered by FAL.ai.
@@ -275,6 +276,6 @@ export async function processImage(
     filename: `product-${presetId}.${ext}`,
     mimeType: originalMime,
     processedUrl,
-    processorLabel: `fal-ai/${config.model.split("/").slice(1).join("/")} — ${presetId}`,
+    processorLabel: getCustomerProcessorLabel(presetId),
   };
 }
