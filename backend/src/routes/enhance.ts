@@ -12,22 +12,27 @@ import {
 import { processImage } from "../processors/index.js";
 import { consumeRateLimit } from "../security/rate-limiter.js";
 import {
-  consumeSessionCredit,
+  refundSessionCredit,
+  reserveSessionCredit,
   createSession,
   touchSession,
 } from "../storage/session-store.js";
+import {
+  acquireSessionProcessingLock,
+  releaseSessionProcessingLock,
+} from "../security/session-locks.js";
 import {
   readStoredOutput,
   resolveStoredOutput,
   storeOutput,
 } from "../storage/output-store.js";
+import { cleanupExpiredRuntimeState } from "../storage/runtime-maintenance.js";
 import { logError, logEvent } from "../utils/log.js";
 import { signValue } from "../utils/signing.js";
 
 const router = new Hono<AppEnv>();
 const PROCESSING_FAILURE_MESSAGE =
   "We couldn't complete this enhancement. Try again or use a different product image.";
-const IN_FLIGHT_SESSIONS = new Set<string>();
 
 function serialiseSession(session: {
   id: string;
@@ -86,6 +91,7 @@ router.get("/health", (c) => c.json({ status: "ok" }));
 
 router.get("/session", async (c) => {
   const config = readConfig();
+  await cleanupExpiredRuntimeState();
   const requestId = c.get("requestId");
   const clientIp = c.get("clientIp");
   const rateLimit = consumeRateLimit(
@@ -122,6 +128,7 @@ router.get("/session", async (c) => {
 
 router.get("/outputs/:outputId", async (c) => {
   const config = readConfig();
+  await cleanupExpiredRuntimeState();
   const session = c.get("session");
 
   if (!session) {
@@ -162,6 +169,7 @@ router.get("/outputs/:outputId", async (c) => {
 
 router.post("/enhance", async (c) => {
   const config = readConfig();
+  await cleanupExpiredRuntimeState();
   const requestId = c.get("requestId");
   const clientIp = c.get("clientIp");
   const session = c.get("session");
@@ -204,22 +212,20 @@ router.post("/enhance", async (c) => {
     Math.max(ipRateLimit.resetAt, sessionRateLimit.resetAt),
   );
 
-  if (session.creditsRemaining <= 0) {
-    return c.json(
-      { error: { kind: "processing", message: "No credits remaining for this session." } },
-      402,
-    );
-  }
+  const lockAcquired = acquireSessionProcessingLock(
+    session.id,
+    requestId,
+    config.sessionLockTtlMs,
+  );
 
-  if (IN_FLIGHT_SESSIONS.has(session.id)) {
+  if (!lockAcquired) {
     return c.json(
       { error: { kind: "processing", message: "Only one enhancement can run at a time per session." } },
       409,
     );
   }
 
-  IN_FLIGHT_SESSIONS.add(session.id);
-
+  let reservedSessionId: string | null = null;
   try {
     let parsedInput;
     const contentType = c.req.header("content-type") ?? "";
@@ -256,6 +262,21 @@ router.post("/enhance", async (c) => {
       return c.json({ error: parsedInput }, 400);
     }
 
+    const reservedSession = await reserveSessionCredit(
+      session.id,
+      requestId,
+      `preset:${parsedInput.presetId}`,
+    );
+
+    if (!reservedSession) {
+      return c.json(
+        { error: { kind: "processing", message: "No credits remaining for this session." } },
+        402,
+      );
+    }
+
+    reservedSessionId = reservedSession.id;
+
     const processed = await processImage(
       parsedInput.imageBuffer,
       parsedInput.mimeType,
@@ -268,30 +289,25 @@ router.post("/enhance", async (c) => {
     );
     const storedOutput = await storeOutput({
       bytes: outputBytes,
-      sessionId: session.id,
+      sessionId: reservedSession.id,
       filename: processed.filename,
       mimeType: processed.mimeType,
       requestId,
       signingSecret: config.sessionSecret,
       urlTtlSeconds: config.outputUrlTtlSeconds,
     });
-    const nextSession = await consumeSessionCredit(
-      session,
-      requestId,
-      `preset:${parsedInput.presetId}`,
-    );
 
-    c.header("X-Credits-Remaining", String(nextSession.creditsRemaining));
+    c.header("X-Credits-Remaining", String(reservedSession.creditsRemaining));
     c.header("Cache-Control", "no-store");
 
     logEvent("info", "enhance.completed", {
       requestId,
-      sessionId: session.id,
+      sessionId: reservedSession.id,
       clientIp,
       presetId: parsedInput.presetId,
       outputId: storedOutput.outputId,
       mimeType: processed.mimeType,
-      creditsRemaining: nextSession.creditsRemaining,
+      creditsRemaining: reservedSession.creditsRemaining,
     });
 
     return c.json(
@@ -302,6 +318,14 @@ router.post("/enhance", async (c) => {
       200,
     );
   } catch (err) {
+    if (reservedSessionId) {
+      await refundSessionCredit(
+        reservedSessionId,
+        requestId,
+        "processing_failed",
+      );
+    }
+
     logError("enhance.failed", err, {
       requestId,
       sessionId: session.id,
@@ -311,7 +335,7 @@ router.post("/enhance", async (c) => {
     const response = toPublicErrorResponse(err);
     return c.json(response.body, response.status);
   } finally {
-    IN_FLIGHT_SESSIONS.delete(session.id);
+    releaseSessionProcessingLock(session.id, requestId);
   }
 });
 

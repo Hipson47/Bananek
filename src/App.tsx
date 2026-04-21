@@ -5,11 +5,15 @@ import { EmptyState } from "./components/EmptyState";
 import { PresetPicker } from "./components/PresetPicker";
 import { UploadPanel } from "./components/UploadPanel";
 import { PRESETS } from "./features/enhancer/presets";
+import {
+  getBackendSession,
+} from "./features/enhancer/processors/backendSession";
 import { BackendProcessor } from "./features/enhancer/processors/backendProcessor";
 import type {
   EnhancementPreset,
   ProcessedImageResult,
 } from "./features/enhancer/types";
+import type { BackendSession } from "./features/enhancer/processors/backendSession";
 
 const processor = new BackendProcessor();
 
@@ -26,7 +30,33 @@ export default function App() {
   const [status, setStatus] = useState<ProcessingStatus>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<ProcessedImageResult | null>(null);
+  const [session, setSession] = useState<BackendSession | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    getBackendSession(true)
+      .then((nextSession) => {
+        if (active) {
+          setSession(nextSession);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setErrorMessage(
+            error instanceof Error
+              ? error.message
+              : "Could not start a secure enhancement session.",
+          );
+          setStatus("error");
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedFile) {
@@ -92,8 +122,10 @@ export default function App() {
         preset: selectedPreset,
         signal: controller.signal,
       });
+      const nextSession = await getBackendSession(true);
 
       setResult(processedResult);
+      setSession(nextSession);
       setStatus("success");
     } catch (error) {
       // Ignore aborts caused by a user-triggered reset
@@ -179,6 +211,7 @@ export default function App() {
                 {status === "success" && "Result generated"}
                 {status === "error" && "Needs attention"}
               </span>
+              {session ? <span>{`Credits remaining: ${session.creditsRemaining}`}</span> : null}
             </div>
 
             <div className="action-group">

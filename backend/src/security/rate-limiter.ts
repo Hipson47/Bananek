@@ -1,51 +1,61 @@
+import { getDatabase } from "../storage/database.js";
+
 type RateLimitResult = {
   remaining: number;
   resetAt: number;
 };
 
-type FixedWindowState = {
+type RateLimitRow = {
   count: number;
-  resetAt: number;
+  reset_at: number;
 };
-
-const WINDOW_STATE = new Map<string, FixedWindowState>();
-
-function pruneExpired(now: number): void {
-  for (const [key, value] of WINDOW_STATE) {
-    if (value.resetAt <= now) {
-      WINDOW_STATE.delete(key);
-    }
-  }
-}
 
 export function consumeRateLimit(
   bucket: string,
   maxRequests: number,
   windowMs: number,
 ): RateLimitResult | null {
+  const db = getDatabase();
   const now = Date.now();
-  pruneExpired(now);
 
-  const current = WINDOW_STATE.get(bucket);
+  const result = db.transaction(() => {
+    db.prepare("DELETE FROM rate_limits WHERE reset_at <= ?").run(now);
 
-  if (!current || current.resetAt <= now) {
-    WINDOW_STATE.set(bucket, { count: 1, resetAt: now + windowMs });
-    return { remaining: Math.max(0, maxRequests - 1), resetAt: now + windowMs };
-  }
+    const row = db.prepare(
+      "SELECT count, reset_at FROM rate_limits WHERE bucket = ?",
+    ).get(bucket) as RateLimitRow | undefined;
 
-  if (current.count >= maxRequests) {
-    return null;
-  }
+    if (!row) {
+      const resetAt = now + windowMs;
+      db.prepare(
+        "INSERT INTO rate_limits (bucket, count, reset_at) VALUES (?, ?, ?)",
+      ).run(bucket, 1, resetAt);
 
-  current.count += 1;
-  WINDOW_STATE.set(bucket, current);
+      return {
+        remaining: Math.max(0, maxRequests - 1),
+        resetAt,
+      };
+    }
 
-  return {
-    remaining: Math.max(0, maxRequests - current.count),
-    resetAt: current.resetAt,
-  };
+    if (row.count >= maxRequests) {
+      return null;
+    }
+
+    const nextCount = row.count + 1;
+    db.prepare(
+      "UPDATE rate_limits SET count = ?, reset_at = ? WHERE bucket = ?",
+    ).run(nextCount, row.reset_at, bucket);
+
+    return {
+      remaining: Math.max(0, maxRequests - nextCount),
+      resetAt: row.reset_at,
+    };
+  })();
+
+  return result;
 }
 
 export function clearRateLimits(): void {
-  WINDOW_STATE.clear();
+  const db = getDatabase();
+  db.prepare("DELETE FROM rate_limits").run();
 }

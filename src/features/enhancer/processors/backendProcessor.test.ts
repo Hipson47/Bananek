@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BackendProcessor } from "./backendProcessor";
+import { clearBackendSessionCache } from "./backendSession";
 import type { ProcessedImageResult } from "../types";
 
 const processor = new BackendProcessor();
@@ -25,20 +26,34 @@ function createResponse(body: unknown, init?: ResponseInit): Response {
 }
 
 afterEach(() => {
+  clearBackendSessionCache();
   vi.restoreAllMocks();
 });
 
 describe("BackendProcessor", () => {
-  it("maps a successful backend response and sends the preset plus image payload", async () => {
+  it("maps a successful backend response and sends the preset plus file payload", async () => {
     const result: ProcessedImageResult = {
       filename: "product-clean-background.png",
       mimeType: "image/png",
-      processedUrl: "data:image/png;base64,iVBORw0KGgo=",
-      processorLabel: "Backend mock enhancement pipeline",
+      processedUrl: "/api/outputs/output-123?expires=999&sig=signed",
+      processorLabel: "Clean Background enhancement",
     };
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(createResponse(result));
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        createResponse({
+          sessionId: "session-123",
+          creditsRemaining: 3,
+          creditsUsed: 0,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createResponse(result, {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Credits-Remaining": "2",
+          },
+        }),
+      );
 
     const processed = await processor.processImage({
       file: createImageFile(),
@@ -46,32 +61,43 @@ describe("BackendProcessor", () => {
     });
 
     expect(processed).toEqual(result);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
-    const [url, init] = fetchMock.mock.calls[0];
+    const [sessionUrl, sessionInit] = fetchMock.mock.calls[0];
+    expect(sessionUrl).toBe("/api/session");
+    expect(sessionInit?.method).toBe("GET");
+
+    const [url, init] = fetchMock.mock.calls[1];
     expect(url).toBe("/api/enhance");
     expect(init?.method).toBe("POST");
-    expect(init?.headers).toEqual({ "Content-Type": "application/json" });
+    expect(init?.headers).toEqual({ "X-Session-Id": "session-123" });
+    expect(init?.body).toBeInstanceOf(FormData);
 
-    const body = JSON.parse(String(init?.body));
-    expect(body).toEqual({
-      presetId: "clean-background",
-      image: "data:image/png;base64,iVBORw==",
-    });
+    const formData = init?.body as FormData;
+    expect(formData.get("presetId")).toBe("clean-background");
+    expect(formData.get("image")).toBeInstanceOf(File);
   });
 
   it("maps backend 4xx responses to the backend error message", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      createResponse(
-        {
-          error: {
-            kind: "validation",
-            message: "Unknown or missing preset.",
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        createResponse({
+          sessionId: "session-123",
+          creditsRemaining: 3,
+          creditsUsed: 0,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createResponse(
+          {
+            error: {
+              kind: "validation",
+              message: "Unknown or missing preset.",
+            },
           },
-        },
-        { status: 400 },
-      ),
-    );
+          { status: 400 },
+        ),
+      );
 
     await expect(
       processor.processImage({ file: createImageFile(), preset }),
@@ -79,14 +105,22 @@ describe("BackendProcessor", () => {
   });
 
   it("rejects malformed backend responses", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      createResponse({
-        filename: "product-clean-background.png",
-        mimeType: "image/png",
-        processedUrl: 42,
-        processorLabel: "Backend mock enhancement pipeline",
-      }),
-    );
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        createResponse({
+          sessionId: "session-123",
+          creditsRemaining: 3,
+          creditsUsed: 0,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createResponse({
+          filename: "product-clean-background.png",
+          mimeType: "image/png",
+          processedUrl: 42,
+          processorLabel: "Clean Background enhancement",
+        }),
+      );
 
     await expect(
       processor.processImage({ file: createImageFile(), preset }),
@@ -98,6 +132,6 @@ describe("BackendProcessor", () => {
 
     await expect(
       processor.processImage({ file: createImageFile(), preset }),
-    ).rejects.toThrow("Could not reach the enhancement service.");
+    ).rejects.toThrow(/Could not (start|reach)/);
   });
 });

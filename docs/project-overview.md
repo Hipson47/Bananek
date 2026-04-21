@@ -32,29 +32,34 @@
 - `src/` is present and contains the active customer-facing app
 - `backend/` is present and contains the active API server
 - the active enhancement path is `App.tsx` -> `BackendProcessor` -> `/api/enhance`
+- the frontend now boots a signed backend session via `/api/session` before calling `/api/enhance`
 - Vite proxies `/api` to the backend in local development
 - the backend supports `sharp`, `fal`, and `mock` behind the same `/api/enhance` contract
+- processed outputs are persisted server-side and returned to the UI as `/api/outputs/:outputId` URLs
+- sessions, usage events, output records, output payloads, rate-limit buckets, and processing locks are persisted in SQLite
 - backend route and validation tests exist
 - frontend tests now cover the `BackendProcessor` request/response contract
 
 ### Current Strengths
 
 - the core customer flow exists end-to-end: upload -> preset -> process -> result
+- the product path now has a real session boundary, restart-safe runtime state, persisted outputs, and server-side usage state
 - the browser no longer owns the primary processing path
 - the backend boundary is explicit and isolated from the UI
 - the codebase now has one coherent product path with deterministic default processing and AI-backed augmentation behind the same seam
 
 ### Current Constraints
 
-- there is no auth, billing, storage, queueing, or delivery flow yet
-- AI-backed processing is available, but production routing/cost strategy is still an operational decision
-- results are still returned inline as `data:` URLs rather than stored assets
+- customer auth and payments are still absent
+- AI-backed processing is available, but queueing and production cost controls are still limited
+- storage is durable SQLite on a single node only; no cloud object store or multi-instance retention workflow exists yet
 
 ## Near-Term Next Step
 
 - `Verified Fact`: `sharp` and FAL.ai both sit behind the same `POST /api/enhance` seam
+- `Verified Fact`: the backend now enforces session bootstrap, SQLite-backed rate limits, SQLite-backed credit tracking, persisted outputs, and restart-safe single-flight locks
 - `Proposal`: decide whether production should prefer `sharp`, `fal`, or a per-preset hybrid strategy
-- `Proposal`: add billing/storage/delivery only after processor strategy is chosen
+- `Proposal`: replace single-node SQLite output persistence with cloud object storage and paid credit purchase before public launch
 
 ## Historical / Reference Context
 

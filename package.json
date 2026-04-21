@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "tsc --project tsconfig.app.json && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "security:audit": "npm audit --omit=dev && npm --prefix backend audit --omit=dev",
+    "verify": "npm run typecheck && npm test && npm run build && npm --prefix backend run verify && npm run security:audit"
   },
   "dependencies": {
     "react": "^18.3.1",

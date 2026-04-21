@@ -3,34 +3,10 @@ import type {
   ProcessImageInput,
   ProcessedImageResult,
 } from "../types";
-
-/**
- * Convert a Uint8Array to a base64 string.
- *
- * This runs in the browser only — Buffer is not available here.
- * We chunk the input to avoid hitting the call-stack limit of
- * String.fromCharCode for large images.
- */
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunkSize = 0x8000; // 32 KB chunks
-
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    const chunk = bytes.subarray(index, index + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return btoa(binary);
-}
-
-async function fileToDataUrl(file: File): Promise<string> {
-  try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    return `data:${file.type};base64,${toBase64(bytes)}`;
-  } catch {
-    throw new Error("Could not read the uploaded image.");
-  }
-}
+import {
+  getBackendSession,
+  syncSessionFromEnhanceResponse,
+} from "./backendSession";
 
 function isProcessedImageResult(value: unknown): value is ProcessedImageResult {
   if (typeof value !== "object" || value === null) {
@@ -53,18 +29,18 @@ export class BackendProcessor implements ImageProcessor {
     preset,
     signal,
   }: ProcessImageInput & { signal?: AbortSignal }): Promise<ProcessedImageResult> {
-    const dataUrl = await fileToDataUrl(file);
+    const session = await getBackendSession();
+    const formData = new FormData();
+    formData.append("presetId", preset.id);
+    formData.append("image", file);
 
     let response: Response;
 
     try {
       response = await fetch("/api/enhance", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          presetId: preset.id,
-          image: dataUrl,
-        }),
+        headers: { "X-Session-Id": session.sessionId },
+        body: formData,
         signal,
       });
     } catch (err) {
@@ -86,6 +62,8 @@ export class BackendProcessor implements ImageProcessor {
     if (!isProcessedImageResult(result)) {
       throw new Error("Enhancement service returned an invalid response.");
     }
+
+    syncSessionFromEnhanceResponse(response);
 
     return result;
   }

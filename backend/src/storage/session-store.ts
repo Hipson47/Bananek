@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import path from "node:path";
+
+import { getDatabase } from "./database.js";
 
 export type SessionRecord = {
   id: string;
@@ -10,7 +10,15 @@ export type SessionRecord = {
   creditsUsed: number;
 };
 
-type UsageEvent = {
+type SessionRow = {
+  id: string;
+  created_at: string;
+  last_seen_at: string;
+  credits_remaining: number;
+  credits_used: number;
+};
+
+type UsageEventParams = {
   event: string;
   sessionId: string;
   requestId?: string;
@@ -20,114 +28,182 @@ type UsageEvent = {
   creditsUsed: number;
 };
 
-const SESSION_CACHE = new Map<string, SessionRecord>();
-
-function getSessionsDir(): string {
-  return path.resolve(process.cwd(), "backend/data/sessions");
+function mapSessionRow(row: SessionRow): SessionRecord {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    lastSeenAt: row.last_seen_at,
+    creditsRemaining: row.credits_remaining,
+    creditsUsed: row.credits_used,
+  };
 }
 
-function getUsageLogPath(): string {
-  return path.resolve(process.cwd(), "backend/data/usage-events.ndjson");
-}
-
-function getSessionPath(sessionId: string): string {
-  return path.join(getSessionsDir(), `${sessionId}.json`);
-}
-
-async function ensureStorage(): Promise<void> {
-  await mkdir(getSessionsDir(), { recursive: true });
-  await mkdir(path.dirname(getUsageLogPath()), { recursive: true });
-}
-
-async function persistSession(session: SessionRecord): Promise<void> {
-  await ensureStorage();
-  SESSION_CACHE.set(session.id, session);
-  await writeFile(
-    getSessionPath(session.id),
-    JSON.stringify(session, null, 2),
-    "utf-8",
+function insertUsageEvent(params: UsageEventParams): void {
+  const db = getDatabase();
+  db.prepare(`
+    INSERT INTO usage_events (
+      event,
+      session_id,
+      request_id,
+      detail,
+      timestamp,
+      credits_remaining,
+      credits_used
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    params.event,
+    params.sessionId,
+    params.requestId ?? null,
+    params.detail ?? null,
+    params.timestamp,
+    params.creditsRemaining,
+    params.creditsUsed,
   );
 }
 
-export async function appendUsageEvent(event: UsageEvent): Promise<void> {
-  await ensureStorage();
-  await appendFile(getUsageLogPath(), `${JSON.stringify(event)}\n`, "utf-8");
-}
-
 export async function getSession(sessionId: string): Promise<SessionRecord | null> {
-  const cached = SESSION_CACHE.get(sessionId);
-  if (cached) {
-    return cached;
-  }
+  const db = getDatabase();
+  const row = db.prepare(
+    "SELECT id, created_at, last_seen_at, credits_remaining, credits_used FROM sessions WHERE id = ?",
+  ).get(sessionId) as SessionRow | undefined;
 
-  try {
-    const raw = await readFile(getSessionPath(sessionId), "utf-8");
-    const parsed = JSON.parse(raw) as SessionRecord;
-    SESSION_CACHE.set(sessionId, parsed);
-    return parsed;
-  } catch {
-    return null;
-  }
+  return row ? mapSessionRow(row) : null;
 }
 
 export async function createSession(
   initialCredits: number,
   requestId?: string,
 ): Promise<SessionRecord> {
+  const db = getDatabase();
   const now = new Date().toISOString();
-  const session: SessionRecord = {
-    id: randomUUID(),
+  const id = randomUUID();
+
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO sessions (
+        id,
+        created_at,
+        last_seen_at,
+        credits_remaining,
+        credits_used
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(id, now, now, initialCredits, 0);
+
+    insertUsageEvent({
+      event: "session.created",
+      sessionId: id,
+      requestId,
+      timestamp: now,
+      creditsRemaining: initialCredits,
+      creditsUsed: 0,
+    });
+  })();
+
+  return {
+    id,
     createdAt: now,
     lastSeenAt: now,
     creditsRemaining: initialCredits,
     creditsUsed: 0,
   };
-
-  await persistSession(session);
-  await appendUsageEvent({
-    event: "session.created",
-    sessionId: session.id,
-    requestId,
-    timestamp: now,
-    creditsRemaining: session.creditsRemaining,
-    creditsUsed: session.creditsUsed,
-  });
-
-  return session;
 }
 
 export async function touchSession(session: SessionRecord): Promise<SessionRecord> {
-  const nextSession = {
-    ...session,
-    lastSeenAt: new Date().toISOString(),
-  };
+  const db = getDatabase();
+  const now = new Date().toISOString();
 
-  await persistSession(nextSession);
-  return nextSession;
+  db.prepare(
+    "UPDATE sessions SET last_seen_at = ? WHERE id = ?",
+  ).run(now, session.id);
+
+  return {
+    ...session,
+    lastSeenAt: now,
+  };
 }
 
-export async function consumeSessionCredit(
-  session: SessionRecord,
+export async function reserveSessionCredit(
+  sessionId: string,
   requestId: string,
   detail: string,
-): Promise<SessionRecord> {
-  const nextSession: SessionRecord = {
-    ...session,
-    lastSeenAt: new Date().toISOString(),
-    creditsRemaining: session.creditsRemaining - 1,
-    creditsUsed: session.creditsUsed + 1,
-  };
+): Promise<SessionRecord | null> {
+  const db = getDatabase();
 
-  await persistSession(nextSession);
-  await appendUsageEvent({
-    event: "credits.consumed",
-    sessionId: session.id,
-    requestId,
-    detail,
-    timestamp: nextSession.lastSeenAt,
-    creditsRemaining: nextSession.creditsRemaining,
-    creditsUsed: nextSession.creditsUsed,
-  });
+  const reserved = db.transaction(() => {
+    const now = new Date().toISOString();
+    const update = db.prepare(`
+      UPDATE sessions
+      SET
+        credits_remaining = credits_remaining - 1,
+        credits_used = credits_used + 1,
+        last_seen_at = ?
+      WHERE id = ? AND credits_remaining > 0
+    `).run(now, sessionId);
 
-  return nextSession;
+    if (update.changes === 0) {
+      return null;
+    }
+
+    const row = db.prepare(
+      "SELECT id, created_at, last_seen_at, credits_remaining, credits_used FROM sessions WHERE id = ?",
+    ).get(sessionId) as SessionRow;
+    const session = mapSessionRow(row);
+
+    insertUsageEvent({
+      event: "credits.consumed",
+      sessionId,
+      requestId,
+      detail,
+      timestamp: session.lastSeenAt,
+      creditsRemaining: session.creditsRemaining,
+      creditsUsed: session.creditsUsed,
+    });
+
+    return session;
+  })();
+
+  return reserved;
+}
+
+export async function refundSessionCredit(
+  sessionId: string,
+  requestId: string,
+  detail: string,
+): Promise<SessionRecord | null> {
+  const db = getDatabase();
+
+  const refunded = db.transaction(() => {
+    const now = new Date().toISOString();
+    const update = db.prepare(`
+      UPDATE sessions
+      SET
+        credits_remaining = credits_remaining + 1,
+        credits_used = CASE WHEN credits_used > 0 THEN credits_used - 1 ELSE 0 END,
+        last_seen_at = ?
+      WHERE id = ?
+    `).run(now, sessionId);
+
+    if (update.changes === 0) {
+      return null;
+    }
+
+    const row = db.prepare(
+      "SELECT id, created_at, last_seen_at, credits_remaining, credits_used FROM sessions WHERE id = ?",
+    ).get(sessionId) as SessionRow;
+    const session = mapSessionRow(row);
+
+    insertUsageEvent({
+      event: "credits.refunded",
+      sessionId,
+      requestId,
+      detail,
+      timestamp: session.lastSeenAt,
+      creditsRemaining: session.creditsRemaining,
+      creditsUsed: session.creditsUsed,
+    });
+
+    return session;
+  })();
+
+  return refunded;
 }

@@ -1,8 +1,9 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { rm } from "node:fs/promises";
 
 import { createApp } from "../src/index.js";
 import { clearRateLimits } from "../src/security/rate-limiter.js";
+import { closeDatabase, resetDatabaseForTests } from "../src/storage/database.js";
+import { getSession } from "../src/storage/session-store.js";
 
 const TINY_PNG_B64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAEUlEQVR4nGM4MS0FjhiI4wAA4dIcIR+QGUQAAAAASUVORK5CYII=";
@@ -14,6 +15,8 @@ const originalProcessorFailurePolicy = process.env.PROCESSOR_FAILURE_POLICY;
 const originalFalApiKey = process.env.FAL_API_KEY;
 const originalEnhanceRateLimitMax = process.env.ENHANCE_RATE_LIMIT_MAX;
 const originalDefaultSessionCredits = process.env.DEFAULT_SESSION_CREDITS;
+const originalDatabasePath = process.env.DATABASE_PATH;
+const originalOutputUrlTtlSeconds = process.env.OUTPUT_URL_TTL_SECONDS;
 
 function createPngFile(): File {
   return new File([Buffer.from(TINY_PNG_B64, "base64")], "shoe.png", {
@@ -63,6 +66,7 @@ beforeAll(() => {
   process.env.PROCESSOR_FAILURE_POLICY = "strict";
   process.env.DEFAULT_SESSION_CREDITS = "2";
   process.env.ENHANCE_RATE_LIMIT_MAX = "10";
+  process.env.DATABASE_PATH = "backend/data/test-runtime.sqlite";
 });
 
 afterAll(() => {
@@ -80,17 +84,26 @@ afterAll(() => {
 
   if (originalDefaultSessionCredits === undefined) delete process.env.DEFAULT_SESSION_CREDITS;
   else process.env.DEFAULT_SESSION_CREDITS = originalDefaultSessionCredits;
+
+  if (originalDatabasePath === undefined) delete process.env.DATABASE_PATH;
+  else process.env.DATABASE_PATH = originalDatabasePath;
+
+  if (originalOutputUrlTtlSeconds === undefined) delete process.env.OUTPUT_URL_TTL_SECONDS;
+  else process.env.OUTPUT_URL_TTL_SECONDS = originalOutputUrlTtlSeconds;
 });
 
 afterEach(async () => {
   vi.unstubAllGlobals();
   clearRateLimits();
+  closeDatabase();
+  resetDatabaseForTests();
   process.env.PROCESSOR = "mock";
   process.env.PROCESSOR_FAILURE_POLICY = "strict";
   process.env.DEFAULT_SESSION_CREDITS = "2";
   process.env.ENHANCE_RATE_LIMIT_MAX = "10";
   delete process.env.FAL_API_KEY;
-  await rm("backend/data", { recursive: true, force: true });
+  process.env.DATABASE_PATH = "backend/data/test-runtime.sqlite";
+  delete process.env.OUTPUT_URL_TTL_SECONDS;
 });
 
 describe("GET /api/health", () => {
@@ -232,6 +245,68 @@ describe("POST /api/enhance", () => {
     expect(body.error.message).toContain("Too many enhancement requests");
   });
 
+  it("persists session credits and outputs across database restarts", async () => {
+    const app = createApp();
+    const { cookie, sessionId } = await bootstrapSession(app);
+    const enhanceRes = await postMultipart(app, { cookie, sessionId });
+    const enhanceBody = await enhanceRes.json();
+
+    expect(enhanceRes.status).toBe(200);
+    expect(enhanceRes.headers.get("x-credits-remaining")).toBe("1");
+
+    closeDatabase();
+
+    const restartedApp = createApp();
+    const session = await getSession(sessionId);
+    expect(session?.creditsRemaining).toBe(1);
+    expect(session?.creditsUsed).toBe(1);
+
+    const outputRes = await restartedApp.request(enhanceBody.processedUrl, {
+      method: "GET",
+      headers: { Cookie: cookie },
+    });
+
+    expect(outputRes.status).toBe(200);
+    expect(outputRes.headers.get("content-type")).toBe("image/png");
+  });
+
+  it("keeps rate limits after database restart", async () => {
+    process.env.ENHANCE_RATE_LIMIT_MAX = "1";
+    process.env.DEFAULT_SESSION_CREDITS = "5";
+    const app = createApp();
+    const { cookie, sessionId } = await bootstrapSession(app);
+
+    const first = await postMultipart(app, { cookie, sessionId });
+    expect(first.status).toBe(200);
+
+    closeDatabase();
+
+    const restartedApp = createApp();
+    const second = await postMultipart(restartedApp, { cookie, sessionId });
+    const body = await second.json();
+
+    expect(second.status).toBe(429);
+    expect(body.error.message).toContain("Too many enhancement requests");
+  });
+
+  it("keeps credit consumption atomic under concurrent requests", async () => {
+    process.env.DEFAULT_SESSION_CREDITS = "1";
+    const app = createApp();
+    const { cookie, sessionId } = await bootstrapSession(app);
+
+    const [first, second] = await Promise.all([
+      postMultipart(app, { cookie, sessionId }),
+      postMultipart(app, { cookie, sessionId }),
+    ]);
+
+    const statuses = [first.status, second.status].sort((a, b) => a - b);
+    expect(statuses).toEqual([200, 409]);
+
+    const session = await getSession(sessionId);
+    expect(session?.creditsRemaining).toBe(0);
+    expect(session?.creditsUsed).toBe(1);
+  });
+
   it("falls back only when the failure policy explicitly allows it", async () => {
     process.env.PROCESSOR = "fal";
     process.env.PROCESSOR_FAILURE_POLICY = "fallback-to-sharp";
@@ -260,5 +335,30 @@ describe("POST /api/enhance", () => {
     expect(body.error.message).toBe(
       "We couldn't complete this enhancement. Try again or use a different product image.",
     );
+
+    const session = await getSession(sessionId);
+    expect(session?.creditsRemaining).toBe(2);
+    expect(session?.creditsUsed).toBe(0);
+  });
+
+  it("cleans up expired outputs before serving them", async () => {
+    process.env.DEFAULT_SESSION_CREDITS = "2";
+    process.env.OUTPUT_URL_TTL_SECONDS = "1";
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValue(1_700_000_000_000);
+
+    const app = createApp();
+    const { cookie, sessionId } = await bootstrapSession(app);
+    const enhanceRes = await postMultipart(app, { cookie, sessionId });
+    const enhanceBody = await enhanceRes.json();
+
+    nowSpy.mockReturnValue(1_700_000_000_000 + 2_000);
+
+    const outputRes = await app.request(enhanceBody.processedUrl, {
+      method: "GET",
+      headers: { Cookie: cookie },
+    });
+
+    expect(outputRes.status).toBe(404);
   });
 });

@@ -2,31 +2,37 @@
 
 ## Current Objective
 
-Phase 3 AI integration implemented via FAL.ai and hardened for MVP. The `/api/enhance`
-endpoint now supports deterministic default processing plus AI-backed processing with safe fallback.
-Next: production processor strategy decision and billing/delivery controls.
+The repo now has a real session-backed MVP path. `/api/enhance` keeps the stable product entrypoint,
+but the backend now enforces signed sessions, persisted outputs, usage state, rate limits, stronger image
+validation, request IDs, structured logs, and a SQLite-backed runtime core. Next: payments, cloud storage,
+and async jobs for AI-heavy traffic.
 
 ## Active Milestone
 
-MVP product-path implementation -- coherent
+Production-readiness rescue pass -- coherent MVP path
 
 ## Current State
 
 - `src/` contains a runnable Vite + React + TypeScript app (upload -> preset -> process -> result)
 - `backend/` contains a Node.js + Hono + TypeScript server with `POST /api/enhance` and `GET /api/health`
-- Frontend `BackendProcessor` calls `/api/enhance` -- unchanged from Phase 1
+- Frontend boots a signed backend session via `GET /api/session`
+- Frontend `BackendProcessor` sends multipart uploads to `/api/enhance` with a session header
 - Vite dev proxy routes `/api` -> `localhost:3001`
 - **Three processors available**, selected via `PROCESSOR` env var:
   - `sharp` (default): deterministic libvips transforms, no API key required
-  - `fal`: AI transforms via FAL.ai (background-removal + FLUX Kontext), can fall back to `sharp`
+  - `fal`: AI transforms via FAL.ai (background-removal + FLUX Kontext)
   - `mock`: original bytes returned unchanged, for contract-only tests
 - customer-facing UI no longer exposes provider/model details
-- processing failures now return customer-safe messages; provider failures can fall back to `sharp`
-- `npm test` (root): 58 tests pass (7 frontend + 51 backend)
-  - frontend: 3 `validateImageFile` + 4 `backendProcessor`
-  - backend: 9 `validation` + 11 `enhance-route` + 14 `sharp-processor` + 17 `fal-processor`
+- session cookie + `X-Session-Id` header establish the active auth/session boundary
+- processed assets are persisted in SQLite and served from `/api/outputs/:outputId`
+- sessions, usage events, rate-limit counters, and processing locks are persisted in SQLite under `backend/data/app.sqlite`
+- restart-safe credit reservation and refund now run inside database transactions
+- `npm test` (root): 63 tests pass
+- `npm --prefix backend test`: 56 tests pass
 - `tsc --noEmit`: clean in both frontend and backend
 - `npm run build`: frontend production build succeeds
+- backend now has a real `build`/`start` path via compiled JS
+- `npm run verify`: passes
 
 ## Processor / Preset Configuration
 
@@ -56,20 +62,21 @@ response contract remains identical to the sharp processor.
 | Runnable frontend slice | Frontend Agent | done | upload -> preset -> process -> result flow |
 | Phase 1 backend proxy | Backend Agent | done | Hono server, enhance route, validation |
 | Frontend <-> backend wiring | Full Stack | done | BackendProcessor, Vite proxy, abort control |
-| Integration hardening | Full Stack | done | download, drag-and-drop, AbortController, body limit |
+| Integration hardening | Full Stack | done | signed sessions, multipart upload, persisted outputs, credits stub |
+| SQLite runtime core | Full Stack | done | sessions, outputs, rate limits, and locks are durable across restart |
 | Repo cleanup | Documentation | done | stale docs archived, all active docs updated |
 | Real image processing (Phase 2) | Backend Agent | done | sharp processor, 3 presets, 14 tests |
 | AI-provider integration (Phase 3) | Backend Agent | done | FAL.ai, 3 presets, 17 tests, provider-safe path |
-| MVP hardening | Full Stack | done | customer-safe labels/errors, fallback, env/docs alignment |
-| Billing / credits / storage | Product | not_started | next milestone |
+| MVP hardening | Full Stack | done | request IDs, structured logs, stronger validation, provider URL allowlist |
+| Payments / purchased credits | Product | not_started | next milestone; credits are stubbed server-side only |
 | Customer product mode | Product Strategy | not_started | target state only |
 
 ## Current Blockers
 
-None.
+No implementation blockers inside the current local MVP path.
 
 ## Next Action
 
-1. Choose production processor: `sharp` (stable), `fal` (AI quality/cost), or per-preset hybrid
-2. Add billing/credit tracking if `fal` is used in production
-3. Add output storage (S3/R2) if inline data URLs become too large for the intended download path
+1. Replace single-node SQLite blob persistence with cloud object storage plus retention controls
+2. Add purchased credits / payments on top of the existing session credit stub
+3. Decide whether AI traffic should remain synchronous or move to queued async jobs

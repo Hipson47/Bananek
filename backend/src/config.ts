@@ -37,6 +37,7 @@ export type AppConfig = {
   allowedOrigins: string[];
   processor: "sharp" | "mock" | "fal";
   processorFailurePolicy: "strict" | "fallback-to-sharp";
+  databasePath: string;
   sessionSecret: string;
   sessionCookieName: string;
   defaultSessionCredits: number;
@@ -44,6 +45,7 @@ export type AppConfig = {
   enhanceRateLimitMax: number;
   sessionBootstrapRateLimitMax: number;
   outputUrlTtlSeconds: number;
+  sessionLockTtlMs: number;
   falAllowedHostSuffixes: string[];
 };
 
@@ -89,6 +91,7 @@ export function readConfig(): AppConfig {
     allowedOrigins: rawAllowedOrigins,
     processor: rawProcessor as "sharp" | "mock" | "fal",
     processorFailurePolicy: rawProcessorFailurePolicy as "strict" | "fallback-to-sharp",
+    databasePath: optionalEnv("DATABASE_PATH", "backend/data/app.sqlite"),
     sessionSecret: rawSessionSecret || defaultSessionSecret,
     sessionCookieName: optionalEnv("SESSION_COOKIE_NAME", "enhancer_session"),
     defaultSessionCredits: optionalNumberEnv("DEFAULT_SESSION_CREDITS", 3),
@@ -96,6 +99,7 @@ export function readConfig(): AppConfig {
     enhanceRateLimitMax: optionalNumberEnv("ENHANCE_RATE_LIMIT_MAX", 10),
     sessionBootstrapRateLimitMax: optionalNumberEnv("SESSION_BOOTSTRAP_RATE_LIMIT_MAX", 30),
     outputUrlTtlSeconds: optionalNumberEnv("OUTPUT_URL_TTL_SECONDS", 3_600),
+    sessionLockTtlMs: optionalNumberEnv("SESSION_LOCK_TTL_MS", 120_000),
     falAllowedHostSuffixes: rawFalAllowedHostSuffixes,
   };
 }

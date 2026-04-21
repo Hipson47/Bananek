@@ -1,7 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import path from "node:path";
 
+import { getDatabase } from "./database.js";
 import { signValue, unsignValue } from "../utils/signing.js";
 
 type OutputRecord = {
@@ -11,7 +10,19 @@ type OutputRecord = {
   mimeType: string;
   createdAt: string;
   requestId: string;
-  storagePath: string;
+  expiresAt: number;
+  payload: Buffer;
+};
+
+type OutputRow = {
+  id: string;
+  session_id: string;
+  filename: string;
+  mime_type: string;
+  created_at: string;
+  request_id: string;
+  expires_at: number;
+  payload: Buffer;
 };
 
 type StoredOutput = {
@@ -19,27 +30,17 @@ type StoredOutput = {
   processedUrl: string;
 };
 
-const MIME_TO_EXTENSION: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-};
-
-function getOutputsDir(): string {
-  return path.resolve(process.cwd(), "backend/data/outputs");
-}
-
-function getOutputPath(outputId: string, mimeType: string): string {
-  const extension = MIME_TO_EXTENSION[mimeType] ?? "bin";
-  return path.join(getOutputsDir(), `${outputId}.${extension}`);
-}
-
-function getMetadataPath(outputId: string): string {
-  return path.join(getOutputsDir(), `${outputId}.json`);
-}
-
-async function ensureStorage(): Promise<void> {
-  await mkdir(getOutputsDir(), { recursive: true });
+function mapOutputRow(row: OutputRow): OutputRecord {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    filename: row.filename,
+    mimeType: row.mime_type,
+    createdAt: row.created_at,
+    requestId: row.request_id,
+    expiresAt: row.expires_at,
+    payload: row.payload,
+  };
 }
 
 export async function storeOutput(args: {
@@ -51,23 +52,33 @@ export async function storeOutput(args: {
   signingSecret: string;
   urlTtlSeconds: number;
 }): Promise<StoredOutput> {
+  const db = getDatabase();
   const outputId = randomUUID();
-  const storagePath = getOutputPath(outputId, args.mimeType);
-  const record: OutputRecord = {
-    id: outputId,
-    sessionId: args.sessionId,
-    filename: args.filename,
-    mimeType: args.mimeType,
-    createdAt: new Date().toISOString(),
-    requestId: args.requestId,
-    storagePath,
-  };
-
-  await ensureStorage();
-  await writeFile(storagePath, args.bytes);
-  await writeFile(getMetadataPath(outputId), JSON.stringify(record, null, 2), "utf-8");
-
+  const createdAt = new Date().toISOString();
   const expiresAt = Math.floor(Date.now() / 1000) + args.urlTtlSeconds;
+
+  db.prepare(`
+    INSERT INTO outputs (
+      id,
+      session_id,
+      filename,
+      mime_type,
+      created_at,
+      request_id,
+      expires_at,
+      payload
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    outputId,
+    args.sessionId,
+    args.filename,
+    args.mimeType,
+    createdAt,
+    args.requestId,
+    expiresAt,
+    args.bytes,
+  );
+
   const signature = signValue(
     `${outputId}.${args.sessionId}.${expiresAt}`,
     args.signingSecret,
@@ -86,6 +97,7 @@ export async function resolveStoredOutput(args: {
   signature: string;
   signingSecret: string;
 }): Promise<OutputRecord | null> {
+  const db = getDatabase();
   const rawValue = unsignValue(args.signature, args.signingSecret);
 
   if (!rawValue) {
@@ -100,18 +112,36 @@ export async function resolveStoredOutput(args: {
     return null;
   }
 
-  try {
-    const raw = await readFile(getMetadataPath(args.outputId), "utf-8");
-    const record = JSON.parse(raw) as OutputRecord;
-    if (record.sessionId !== args.sessionId) {
-      return null;
-    }
-    return record;
-  } catch {
-    return null;
-  }
+  const row = db.prepare(`
+    SELECT
+      id,
+      session_id,
+      filename,
+      mime_type,
+      created_at,
+      request_id,
+      expires_at,
+      payload
+    FROM outputs
+    WHERE id = ? AND session_id = ? AND expires_at >= ?
+  `).get(
+    args.outputId,
+    args.sessionId,
+    Math.floor(Date.now() / 1000),
+  ) as OutputRow | undefined;
+
+  return row ? mapOutputRow(row) : null;
 }
 
 export async function readStoredOutput(record: OutputRecord): Promise<Buffer> {
-  return readFile(record.storagePath);
+  return record.payload;
+}
+
+export async function cleanupExpiredOutputs(nowEpochSeconds = Math.floor(Date.now() / 1000)): Promise<number> {
+  const db = getDatabase();
+  const result = db.prepare(
+    "DELETE FROM outputs WHERE expires_at < ?",
+  ).run(nowEpochSeconds);
+
+  return result.changes;
 }

@@ -87,7 +87,7 @@ Replace or augment sharp with an AI provider for preset-based enhancement.
 - preset-specific orchestration for background cleanup and marketplace enhancement ✓
 - backend-owned provider secret handling via `FAL_API_KEY` ✓
 - customer-safe API errors and metadata that do not expose provider/model details ✓
-- optional runtime fallback via `PROCESSOR_FALLBACK=sharp` ✓
+- explicit processor failure policy via `PROCESSOR_FAILURE_POLICY` ✓
 
 ## Phase 4 — MVP Hardening
 
@@ -98,6 +98,7 @@ Make the implemented product path coherent enough for MVP preparation without ch
 ### Status
 
 - `Verified Fact`: complete -- active customer path is preset-based frontend -> `/api/enhance` -> backend processor seam (`sharp`, `fal`, or `mock`), with test coverage and customer-safe error handling
+- `Verified Fact`: complete -- runtime state is durable on a single node via SQLite (sessions, credits, rate limits, locks, outputs)
 
 ### Deliverables
 
@@ -106,6 +107,8 @@ Make the implemented product path coherent enough for MVP preparation without ch
 - provider/model details removed from customer-facing UI ✓
 - runtime fallback behavior for AI processing failures ✓
 - truthful `.env.example` for current runtime modes ✓
+- signed session bootstrap, persisted output delivery, and credits stub ✓
+- SQLite-backed runtime core, migrations, and cleanup of expired runtime state ✓
 - docs synchronized to current implementation and next-step reality ✓
 
 ## Next Decision Layer
@@ -114,4 +117,4 @@ The next product decision is no longer "whether to add a backend" or "whether to
 It is:
 
 - which processor strategy should be the default production mode for launch: `sharp`, `fal`, or a hybrid rollout
-- what storage, billing, and delivery layer should wrap the existing enhancement path
+- what cloud storage, billing, and delivery layer should replace the current single-node SQLite runtime core
