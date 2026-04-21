@@ -52,6 +52,15 @@ function makeResponse(status: number, body: unknown, bodyBuffer?: Buffer) {
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: {
+      get: (name: string) => {
+        if (name.toLowerCase() === "content-length") {
+          const buf = bodyBuffer ?? PNG_BUF;
+          return String(buf.byteLength);
+        }
+        return null;
+      },
+    },
     json: async () => body,
     arrayBuffer: async (): Promise<ArrayBuffer> => {
       const buf = bodyBuffer ?? PNG_BUF;
@@ -299,6 +308,16 @@ describe("fal processor — error mapping", () => {
     await expect(processImage(PNG_BUF, "image/png", "marketplace-ready")).rejects.toMatchObject({
       kind: "processing",
       message: expect.stringContaining("unexpected response"),
+    });
+  });
+
+  it("rejects provider asset hosts outside the allowlist", async () => {
+    stubFetch({
+      apiResponse: { image: { url: "https://evil.example.com/result.png" } },
+    });
+    await expect(processImage(PNG_BUF, "image/png", "clean-background")).rejects.toMatchObject({
+      kind: "processing",
+      message: expect.stringContaining("not allowed"),
     });
   });
 });

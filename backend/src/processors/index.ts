@@ -16,8 +16,18 @@
 import { processImage as mockProcessImage } from "./mock-processor.js";
 import { processImage as sharpProcessImage } from "./sharp-processor.js";
 import { processImage as falProcessImage } from "./fal-processor.js";
+import { logError, logEvent } from "../utils/log.js";
 
 import type { PresetId, ProcessedImageResult } from "../types.js";
+
+function readProcessorFailurePolicy(): "strict" | "fallback-to-sharp" {
+  const raw = process.env.PROCESSOR_FAILURE_POLICY?.trim();
+  if (raw === "fallback-to-sharp") {
+    return "fallback-to-sharp";
+  }
+
+  return "strict";
+}
 
 export function processImage(
   imageBuffer: Buffer,
@@ -25,17 +35,22 @@ export function processImage(
   presetId: PresetId,
 ): Promise<ProcessedImageResult> {
   const proc = process.env.PROCESSOR;
-  const fallback = process.env.PROCESSOR_FALLBACK?.trim() === "none"
-    ? "none"
-    : "sharp";
+  const failurePolicy = readProcessorFailurePolicy();
   if (proc === "mock") return mockProcessImage(imageBuffer, originalMime, presetId);
   if (proc === "fal") {
     return falProcessImage(imageBuffer, originalMime, presetId).catch((error) => {
-      if (fallback !== "sharp") {
+      if (failurePolicy !== "fallback-to-sharp") {
         throw error;
       }
 
-      console.warn("[processor] FAL processor failed; falling back to sharp.", error);
+      logError("processor.fal.failed", error, {
+        presetId,
+        policy: failurePolicy,
+      });
+      logEvent("warn", "processor.fallback_to_sharp", {
+        presetId,
+        originalMime,
+      });
       return sharpProcessImage(imageBuffer, originalMime, presetId);
     });
   }

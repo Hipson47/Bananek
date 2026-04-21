@@ -1,6 +1,6 @@
 import sharp from "sharp";
 
-import { requireEnv } from "../config.js";
+import { readConfig, requireEnv } from "../config.js";
 import type { PresetId, ProcessedImageResult } from "../types.js";
 import { getCustomerProcessorLabel } from "./customer-label.js";
 
@@ -41,6 +41,7 @@ import { getCustomerProcessorLabel } from "./customer-label.js";
 
 const FAL_BASE = "https://fal.run";
 const TIMEOUT_MS = 60_000; // AI inference can be slow
+const MAX_PROVIDER_IMAGE_BYTES = 15 * 1024 * 1024;
 
 const MIME_TO_FORMAT: Record<string, keyof sharp.FormatEnum> = {
   "image/jpeg": "jpeg",
@@ -149,6 +150,33 @@ function mapHttpError(status: number): FalError {
   return new FalError(`Provider request failed (HTTP ${status}).`);
 }
 
+function ensureAllowedProviderUrl(urlString: string): URL {
+  const config = readConfig();
+  let parsed: URL;
+
+  try {
+    parsed = new URL(urlString);
+  } catch {
+    throw new FalError("Provider returned a malformed asset URL.");
+  }
+
+  if (parsed.protocol !== "https:") {
+    throw new FalError("Provider returned a non-HTTPS asset URL.");
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  const allowed = config.falAllowedHostSuffixes.some((suffix) => {
+    const loweredSuffix = suffix.toLowerCase();
+    return host === loweredSuffix || host.endsWith(`.${loweredSuffix}`);
+  });
+
+  if (!allowed) {
+    throw new FalError("Provider returned an asset host that is not allowed.");
+  }
+
+  return parsed;
+}
+
 async function callFalApi(
   model: string,
   payload: Record<string, unknown>,
@@ -185,10 +213,11 @@ async function callFalApi(
 }
 
 async function fetchImageBytes(url: string): Promise<Buffer> {
+  const safeUrl = ensureAllowedProviderUrl(url);
   let response: Response;
 
   try {
-    response = await globalThis.fetch(url, {
+    response = await globalThis.fetch(safeUrl, {
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (err) {
@@ -202,7 +231,18 @@ async function fetchImageBytes(url: string): Promise<Buffer> {
     throw new FalError(`Provider image download failed (HTTP ${response.status}).`);
   }
 
-  return Buffer.from(await response.arrayBuffer());
+  const contentLength = response.headers.get("content-length");
+  if (contentLength && Number(contentLength) > MAX_PROVIDER_IMAGE_BYTES) {
+    throw new FalError("Provider image download exceeded the safe size limit.");
+  }
+
+  const imageBuffer = Buffer.from(await response.arrayBuffer());
+
+  if (imageBuffer.length > MAX_PROVIDER_IMAGE_BYTES) {
+    throw new FalError("Provider image download exceeded the safe size limit.");
+  }
+
+  return imageBuffer;
 }
 
 // ---------------------------------------------------------------------------
