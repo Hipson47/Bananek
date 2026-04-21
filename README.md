@@ -13,9 +13,10 @@ Runnable product-photo enhancement slice for an automation-first e-commerce work
   - choose one preset
   - call `BackendProcessor`
   - send the image to `/api/enhance`
-  - render the processed result
+  - receive and render a genuinely transformed result
 - Vite proxies `/api/*` to the backend in local development
-- the backend currently uses a mock processor that returns the original bytes with truthful metadata
+- the backend uses a real sharp-based processor (auto-orient, resize, flatten, modulate, sharpen)
+- set `PROCESSOR=mock` to run without real transforms (dev / contract testing only)
 
 ## Current Product Flow
 
@@ -23,8 +24,9 @@ The app is a narrow customer-mode slice, not a prompt playground. It supports:
 
 1. upload one product photo
 2. choose one predefined enhancement preset
-3. process through the backend
+3. process through the backend (sharp transforms applied per preset)
 4. compare original vs processed output
+5. download the result
 
 This keeps the product aligned with the intended customer experience:
 
@@ -35,7 +37,6 @@ This keeps the product aligned with the intended customer experience:
 
 ## What Is Not Implemented Yet
 
-- real image processing in the backend
 - AI-provider integration behind the backend seam
 - auth, billing, credits, storage, jobs, or delivery controls
 - production deployment infrastructure
@@ -63,19 +64,18 @@ In this WSL environment, tests need `TMPDIR=/tmp`.
 
 ```bash
 TMPDIR=/tmp npm test
-TMPDIR=/tmp npm --prefix backend test
 npm run build
 ```
 
 ## Phase Status
 
-- Phase 1 backend proxy and frontend wiring: complete
-- Current hardening milestone: complete after this cleanup pass
-- Next milestone: replace the backend mock processor with real processing, most likely `sharp` first, with AI-provider integration later behind the same backend boundary
+- Phase 1 — backend proxy and frontend wiring: **complete**
+- Phase 2 — real image processing via sharp: **complete** (39 tests passing)
+- Phase 3 — AI-provider integration behind `/api/enhance`: **not started**
 
 ## Repo Guide
 
-- agent contract: [AGENTS.md](/mnt/c/Users/marci/Pictures/bananek/AGENTS.md:1)
-- docs index: [docs/README.md](/mnt/c/Users/marci/Pictures/bananek/docs/README.md:1)
-- current repo/product summary: [docs/project-overview.md](/mnt/c/Users/marci/Pictures/bananek/docs/project-overview.md:1)
-- current execution snapshot: [docs/progress/current-status.md](/mnt/c/Users/marci/Pictures/bananek/docs/progress/current-status.md:1)
+- agent contract: [AGENTS.md](AGENTS.md)
+- docs index: [docs/README.md](docs/README.md)
+- current repo/product summary: [docs/project-overview.md](docs/project-overview.md)
+- current execution snapshot: [docs/progress/current-status.md](docs/progress/current-status.md)

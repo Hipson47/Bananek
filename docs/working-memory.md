@@ -2,9 +2,9 @@
 
 ## Current Objective
 
-Phase 2 real image processing is implemented via sharp. The `/api/enhance`
-endpoint now returns genuinely transformed images. Next: decide on AI-provider
-integration path behind the same `/api/enhance` seam.
+Phase 3 AI integration is implemented via FAL.ai behind the existing /api/enhance seam.
+The frontend, route contract, and sharp processor are all unchanged.
+Next: choose whether to route specific presets to FAL vs sharp in production, or add billing/delivery.
 
 ## Decisions
 
@@ -15,34 +15,40 @@ integration path behind the same `/api/enhance` seam.
 - Documentation must separate current state from target state and historical/planning material (DEC-011).
 - Phase 1 backend uses Node.js + Hono + TypeScript (DEC-009).
 - Phase 2 real processing uses sharp (libvips). Output MIME is preserved from input (DEC-012).
-- Processor is selected via PROCESSOR env var: "sharp" (default) or "mock" (dev/test).
+- Phase 3 AI processing uses FAL.ai. Preset prompts hidden from frontend (DEC-013).
+- Processor selected via PROCESSOR env var: "sharp" (default), "fal", or "mock".
 
 ## Active Constraints
 
-- The sharp processor returns genuinely transformed output -- not the original bytes.
-- Output MIME type is preserved from input (PNG in -> PNG out, etc.).
-- The `/api/enhance` contract is stable and unchanged from Phase 1.
-- AI-provider integration is the next concern and must plug in behind the same seam.
+- /api/enhance contract is stable and public; do not change response shape.
+- Output MIME type is preserved from input regardless of processor.
+- FAL_API_KEY must be set when PROCESSOR=fal; validated at server startup.
+- Provider details (model names, prompts) are hidden from frontend.
+
+## Processor Selection
+
+| PROCESSOR | Behaviour | Key required |
+|---|---|---|
+| sharp (default) | Deterministic libvips transforms | No |
+| fal | AI transforms via FAL.ai | FAL_API_KEY |
+| mock | Original bytes returned unchanged | No |
 
 ## Files/Systems Touched (recent)
 
-- `backend/src/processors/sharp-processor.ts` -- new; real preset transforms via sharp
-- `backend/src/processors/index.ts` -- new; selects mock or sharp via PROCESSOR env var
-- `backend/src/routes/enhance.ts` -- import updated to processors/index.js
-- `backend/src/config.ts` -- added processor field, PROCESSOR env var validation
-- `backend/package.json` -- added sharp ^0.34.5
-- `backend/tests/enhance-route.test.ts` -- updated fixtures + descriptions; uses PROCESSOR=mock
-- `backend/tests/sharp-processor.test.ts` -- new; 14 tests covering contract, transforms, resize, errors
+- `backend/src/processors/fal-processor.ts` -- new; FAL.ai AI processor
+- `backend/src/processors/index.ts` -- updated; supports sharp/fal/mock selection
+- `backend/src/config.ts` -- updated; "fal" valid PROCESSOR value, startup FAL_API_KEY check
+- `backend/tests/fal-processor.test.ts` -- new; 17 tests (presets, auth header, error mapping)
 
 ## Open Risks
 
-- Real processing quality is deterministic (sharp) but not AI-backed yet.
-- No output storage -- processed images are returned inline as data URLs only.
-- AI-provider integration remains the next major backend milestone.
+- FAL.ai is a paid service; requests cost credits. No billing/credit tracking yet.
+- FAL API latency is higher than sharp (AI inference can take 5-30s).
+- No output storage -- results returned inline as data URLs.
+- Model IDs (fal-ai/flux-pro/kontext) may change; pin versions when stable.
 
 ## Next Exact Step
 
-1. Decide which AI provider to integrate first (Gemini, FAL, OpenAI Image, etc.).
-2. Implement the AI provider as a new processor behind the existing `/api/enhance` seam.
-3. Add PROCESSOR=ai-{provider} env var path to processors/index.ts.
-4. Add API key loading to config.ts (requireEnv pattern already in place).
+1. Decide on production processor strategy: sharp always, fal always, or per-preset hybrid.
+2. Add billing/credits tracking if FAL is used in production.
+3. Add output storage (S3/R2) for larger results if needed.

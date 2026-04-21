@@ -24,20 +24,29 @@ if (isNaN(rawPort) || rawPort < 1 || rawPort > 65535) {
 }
 
 const rawProcessor = optionalEnv("PROCESSOR", "sharp");
-if (rawProcessor !== "mock" && rawProcessor !== "sharp") {
-  throw new Error(`Invalid PROCESSOR value: "${rawProcessor}". Must be "sharp" or "mock".`);
+if (rawProcessor !== "mock" && rawProcessor !== "sharp" && rawProcessor !== "fal") {
+  throw new Error(
+    `Invalid PROCESSOR value: "${rawProcessor}". Must be "sharp", "mock", or "fal".`,
+  );
+}
+
+// Fail fast at startup if FAL_API_KEY is missing when the FAL processor is selected.
+if (rawProcessor === "fal") {
+  requireEnv("FAL_API_KEY");
 }
 
 export const config = {
   port: rawPort,
   allowedOrigins: optionalEnv("ALLOWED_ORIGINS", "http://localhost:5173").split(","),
-  /** Which image processor to use. "sharp" = real processing; "mock" = no-op for dev/tests. */
-  processor: rawProcessor as "sharp" | "mock",
-  // API keys for AI providers -- uncomment and add to .env.example when real AI processing is added:
-  // geminiApiKey: requireEnv("GEMINI_API_KEY"),
-  // falApiKey: requireEnv("FAL_API_KEY"),
+  /**
+   * Which image processor to use.
+   *   sharp  -- real deterministic transforms via libvips (default)
+   *   fal    -- AI transforms via FAL.ai (requires FAL_API_KEY)
+   *   mock   -- no-op; returns original bytes unchanged; for contract-only tests
+   */
+  processor: rawProcessor as "sharp" | "mock" | "fal",
 };
 
-// Export requireEnv so routes/processors can use the same pattern when they
-// need their own env vars (e.g. a future processor that reads OPENAI_API_KEY).
+// Export requireEnv / optionalEnv so processors and routes can use the same
+// pattern when they need their own env vars.
 export { requireEnv, optionalEnv };

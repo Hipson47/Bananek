@@ -4,7 +4,7 @@
 
 - `Verified Fact`: a runnable Vite + React + TypeScript frontend for a preset-based product photo enhancement workflow
 - `Verified Fact`: a runnable Node.js + Hono + TypeScript backend in `backend/`
-- `Verified Fact`: a repository with an implemented Phase 1 backend proxy plus active product and architecture docs
+- `Verified Fact`: a repository with Phase 1 (backend proxy) and Phase 2 (sharp real processing) implemented, plus active docs
 - `Verified Fact`: a project evolving toward a narrow, monetizable, automation-first e-commerce photo product
 
 ## What This Project Is Not
@@ -33,7 +33,7 @@
 - `backend/` is present and contains the active API server
 - the active enhancement path is `App.tsx` -> `BackendProcessor` -> `/api/enhance`
 - Vite proxies `/api` to the backend in local development
-- the backend mock processor returns the original image bytes with truthful MIME type, filename extension, and `data:` URL metadata
+- the backend sharp processor applies per-preset transforms and returns genuinely different output (auto-orient, resize, modulate, sharpen)
 - backend route and validation tests exist
 - frontend tests now cover the `BackendProcessor` request/response contract
 
@@ -46,14 +46,14 @@
 
 ### Current Constraints
 
-- processing is still mock processing, not real enhancement
+- processing uses sharp for deterministic per-preset transforms; AI-provider integration is the next step
 - there is no auth, billing, storage, queueing, or delivery flow yet
 - no AI provider is wired into the active product path yet
 
 ## Near-Term Next Step
 
-- `Proposal`: replace the backend mock processor with real processing, likely `sharp` first for deterministic transforms and output handling
-- `Proposal`: keep the same `POST /api/enhance` seam so AI-provider integration can plug in later without changing the customer UI contract
+- `Verified Fact`: sharp-based real processing is implemented for all three presets (clean-background, marketplace-ready, studio-polish)
+- `Proposal`: integrate an AI provider behind the same `POST /api/enhance` seam as the next backend milestone
 
 ## Historical / Reference Context
 

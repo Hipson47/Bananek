@@ -17,8 +17,12 @@ coverage
 
 # Production
 dist
+dist2
 dist-ssr
 build
+
+# Vite dev-server artifacts
+vite.config.ts.timestamp-*.mjs
 
 # Environment variables / API Keys
 .env

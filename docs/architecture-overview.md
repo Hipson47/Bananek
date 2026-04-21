@@ -16,7 +16,7 @@
   - `src/App.tsx`
   - `src/features/enhancer/processors/backendProcessor.ts`
   - `POST /api/enhance`
-  - `backend/src/processors/mock-processor.ts`
+  - `backend/src/processors/index.ts` (selects sharp or mock via PROCESSOR env var)
 - the frontend no longer uses browser-side mock processing as the active path
 - local development uses a Vite proxy from `/api` to the backend
 
@@ -24,7 +24,7 @@
 
 - the frontend owns upload, preset selection, progress UI, and result rendering
 - the backend owns request validation and processing orchestration
-- the current processor is still a mock, but the browser/backend boundary is now explicit
+- the current processor is sharp-based; real transforms applied per preset; PROCESSOR=mock available for dev
 - provider details and future server-side processing remain hidden from the browser
 
 ## Key Systems And Boundaries
@@ -64,16 +64,16 @@ Does not yet own:
 2. Customer selects one predefined preset.
 3. Frontend serializes the file and calls `POST /api/enhance`.
 4. Backend validates the request.
-5. Mock processor returns the original bytes with format-correct metadata.
+5. Sharp processor applies preset transforms (auto-orient, resize, flatten, modulate, sharpen) and returns the result.
 6. Frontend renders the returned result.
 
 ## Near-Term Target
 
-The next milestone should preserve the same frontend/backend seam and replace only the backend processing implementation:
+The existing frontend/backend seam is stable. The next milestone is AI-provider integration:
 
-1. keep `POST /api/enhance` as the stable customer-facing contract
-2. replace the mock processor with real processing, likely `sharp` first
-3. keep AI-provider integration behind the backend boundary when it is added later
+1. keep `POST /api/enhance` as the stable customer-facing contract (already stable)
+2. add an AI-provider processor behind the existing seam (PROCESSOR=ai-{provider})
+3. sharp processor remains available as the deterministic fallback
 4. add storage, jobs, billing, and delivery only in later phases
 
 ## Architecture Decision Constraints
