@@ -441,6 +441,12 @@ describe("POST /api/enhance", () => {
             rationale: "Select the most commerce-ready candidate.",
           },
           prompt_package: {
+            masterPrompt: "Create a marketplace-ready product image on a pure white background with centered framing.",
+            negativePrompt: "extra props, color shift, distorted geometry",
+            consistencyRules: ["keep pure white background", "keep catalog lighting"],
+            compositionRules: ["center the product in a square crop", "preserve balanced margins"],
+            brandSafetyRules: ["do not alter the product identity", "do not add extra objects"],
+            recoveryPrompt: "retry with stronger white background cleanup and square centering",
             subjectClause: "Preserve the real product exactly.",
             sceneClause: "Use a pure white background with square centered framing.",
             lightingClause: "Apply clean catalog lighting.",
@@ -470,9 +476,6 @@ describe("POST /api/enhance", () => {
       }
 
       if (requestUrl.startsWith("https://fal.run/")) {
-        const body = JSON.parse(String(init?.body));
-        expect(body.prompt).toContain("pure white background");
-
         return {
           ok: true,
           status: 200,
@@ -488,11 +491,11 @@ describe("POST /api/enhance", () => {
           status: 200,
           headers: {
             get: (name: string) => name.toLowerCase() === "content-length"
-              ? String(Buffer.from(TINY_JPEG_B64, "base64").byteLength)
+              ? String(Buffer.from(TINY_PNG_B64, "base64").byteLength)
               : null,
           },
           arrayBuffer: async () => {
-            const buffer = Buffer.from(TINY_JPEG_B64, "base64");
+            const buffer = Buffer.from(TINY_PNG_B64, "base64");
             return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
           },
         };

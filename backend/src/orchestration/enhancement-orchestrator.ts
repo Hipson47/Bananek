@@ -1,4 +1,4 @@
-import { readConfig } from "../config.js";
+import { config as appConfig } from "../config.js";
 import { logError, logEvent } from "../utils/log.js";
 import { processImage as mockProcessImage } from "../processors/mock-processor.js";
 import { processImage as sharpProcessImage } from "../processors/sharp-processor.js";
@@ -6,14 +6,25 @@ import { processImage as falProcessImage } from "../processors/fal-processor.js"
 import { decodeProcessedDataUrl } from "../processors/data-url.js";
 import type { EnhancementProcessorMap } from "../processors/contracts.js";
 import { analyzeImage } from "./analysis.js";
-import { buildEnhancementPlan } from "./planner.js";
+import { updateConsistencyMemory } from "./consistency-memory.js";
+import { buildEnhancementPlan, selectReplanCandidate } from "./planner.js";
 import { runConsistencyNode } from "./consistency-node.js";
 import { runIntentNode } from "./intent-node.js";
 import { runPromptBuilderNode } from "./prompt-builder-node.js";
 import { runShotPlannerNode } from "./shot-planner-node.js";
 import { verifyEnhancementOutput } from "./verification.js";
 import { runVerificationNode } from "./verification-node.js";
-import type { EnhancementPlan, EnhancementProcessor, OrchestratedEnhancement, OrchestratorInput, PromptPackage } from "./types.js";
+import type {
+  CandidatePlan,
+  ConsistencyMemory,
+  EnhancementPlan,
+  EnhancementProcessor,
+  FailedAttemptSummary,
+  OrchestratedEnhancement,
+  OrchestratorInput,
+  PromptPackage,
+  VerificationResult,
+} from "./types.js";
 
 const DEFAULT_PROCESSORS: EnhancementProcessorMap = {
   mock: mockProcessImage,
@@ -46,7 +57,7 @@ async function executePlan(args: {
       args.presetId,
       {
         requestId: args.requestId,
-        stage: index === 0 ? "primary" : "retry",
+        stage: step.prompt?.variant === "retry" || index > 0 ? "retry" : "primary",
         prompt: step.prompt,
       },
     );
@@ -69,6 +80,112 @@ async function executePlan(args: {
   };
 }
 
+function buildProcessorPrompt(args: {
+  promptPackage: PromptPackage;
+  stepPurpose: string;
+  stepLabel?: string;
+  stage: "primary" | "retry";
+}): NonNullable<EnhancementPlan["steps"][number]["prompt"]> {
+  const focusDirective = args.stepLabel
+    ? `${args.stepPurpose}: ${args.stepLabel}.`
+    : `Focus on ${args.stepPurpose.replace(/-/g, " ")}.`;
+
+  const recoveryDirective = args.stage === "retry" && args.promptPackage.recoveryPrompt
+    ? [args.promptPackage.recoveryPrompt]
+    : [];
+
+  const text = [
+    args.stage === "retry" && args.promptPackage.recoveryPrompt
+      ? args.promptPackage.recoveryPrompt
+      : args.promptPackage.promptText,
+    focusDirective,
+  ].filter(Boolean).join(" ");
+
+  return {
+    variant: args.stage,
+    text,
+    directives: [
+      ...args.promptPackage.consistencyRules,
+      ...args.promptPackage.compositionRules,
+      ...args.promptPackage.brandSafetyRules,
+      ...args.promptPackage.constraintClauses,
+      ...recoveryDirective,
+    ].slice(0, 12),
+    guidanceScale: args.promptPackage.guidanceScale,
+  };
+}
+
+function applyPromptPackageToPlan(args: {
+  plan: EnhancementPlan;
+  promptPackage: PromptPackage;
+  stage: "primary" | "retry";
+}): EnhancementPlan {
+  return {
+    ...args.plan,
+    steps: args.plan.steps.map((step) => (
+      step.processor === "fal"
+        ? {
+            ...step,
+            prompt: buildProcessorPrompt({
+              promptPackage: args.promptPackage,
+              stepPurpose: step.purpose,
+              stepLabel: step.label,
+              stage: args.stage,
+            }),
+          }
+        : step
+    )),
+  };
+}
+
+async function verifyExecution(args: {
+  presetId: OrchestratorInput["presetId"];
+  inputAnalysis: OrchestratedEnhancement["metadata"]["analysis"];
+  output: OrchestratedEnhancement["result"];
+  promptPackage: PromptPackage;
+  config: OrchestratorInput["config"];
+}): Promise<{
+  heuristicVerification: VerificationResult;
+  verificationNode: Awaited<ReturnType<typeof runVerificationNode>>;
+}> {
+  const heuristicVerification = await verifyEnhancementOutput({
+    presetId: args.presetId,
+    inputAnalysis: args.inputAnalysis,
+    output: args.output,
+  });
+  const verificationNode = await runVerificationNode({
+    presetId: args.presetId,
+    inputAnalysis: args.inputAnalysis,
+    outputAnalysis: heuristicVerification.outputAnalysis,
+    promptPackage: args.promptPackage,
+    config: args.config,
+    heuristicAccepted: heuristicVerification.accepted,
+    heuristicReasons: heuristicVerification.reasons,
+  });
+
+  return {
+    heuristicVerification,
+    verificationNode,
+  };
+}
+
+function summarizeFailedAttempt(args: {
+  plan: EnhancementPlan;
+  verification: VerificationResult;
+  promptPackage: PromptPackage;
+}): FailedAttemptSummary {
+  return {
+    candidatePlanId: args.plan.selectedCandidateId ?? args.plan.strategy,
+    verificationScore: args.verification.score,
+    issues: args.verification.issues,
+    promptSnippet: args.promptPackage.masterPrompt.slice(0, 240),
+  };
+}
+
+function chooseCandidateFromPlan(plan: EnhancementPlan): CandidatePlan | null {
+  return plan.candidates?.find((candidate) => candidate.id === plan.selectedCandidateId) ?? null;
+}
+
 async function executeFalWithGraph(args: {
   imageBuffer: Buffer;
   presetId: OrchestratorInput["presetId"];
@@ -77,8 +194,14 @@ async function executeFalWithGraph(args: {
   config: OrchestratorInput["config"];
   processors: EnhancementProcessorMap;
   userGoal?: string | null;
+  consistencyMemory?: ConsistencyMemory | null;
 }): Promise<OrchestratedEnhancement> {
   const analysis = await analyzeImage(args.imageBuffer, args.originalMimeType);
+  const consistencyMemoryBefore = args.consistencyMemory ?? null;
+  const failedAttempts: FailedAttemptSummary[] = [];
+  const attemptedCandidateIds: string[] = [];
+  let consistencyMemoryAfter: ConsistencyMemory | null = consistencyMemoryBefore;
+
   const intent = await runIntentNode({
     presetId: args.presetId,
     analysis,
@@ -97,109 +220,173 @@ async function executeFalWithGraph(args: {
     config: args.config,
   });
 
-  let promptPackage = await runPromptBuilderNode({
+  let activePlan = buildEnhancementPlan({
     presetId: args.presetId,
+    originalMimeType: args.originalMimeType,
     analysis,
-    intent: intent.data,
-    consistency: consistency.data,
     config: args.config,
-    variant: "primary",
+    consistencyMemory: consistencyMemoryBefore,
   });
-  const attemptedStrategies = ["fal-graph-primary"] as string[];
+  attemptedCandidateIds.push(activePlan.selectedCandidateId ?? activePlan.strategy);
+  const attemptedStrategies = [activePlan.selectedCandidateId ?? activePlan.strategy];
   let fallbackApplied = false;
   let retryApplied = false;
-  const initialGraphPlan: EnhancementPlan = {
-    strategy: "ai-only",
-    reason: "OpenRouter planning graph selected FAL as the execution backend.",
-    steps: [{ processor: "fal", purpose: "creative", prompt: {
-      variant: "primary",
-      text: promptPackage.data.promptText,
-      directives: promptPackage.data.constraintClauses,
-      guidanceScale: promptPackage.data.guidanceScale,
-    } }],
-    fallbackStrategy: args.config.processorFailurePolicy === "fallback-to-sharp" ? "sharp-only" : null,
-    verificationPolicy: "retry-once",
-  };
 
-  const executeFal = async (pkg: PromptPackage, stage: "primary" | "retry" | "fallback") => {
-    const result = await args.processors.fal(
-      args.imageBuffer,
-      args.originalMimeType,
-      args.presetId,
-      {
-        requestId: args.requestId,
-        stage,
-        prompt: {
-          variant: stage === "retry" ? "retry" : "primary",
-          text: pkg.promptText,
-          directives: pkg.constraintClauses,
-          guidanceScale: pkg.guidanceScale,
-        },
-      },
-    );
-    const outputBuffer = decodeProcessedDataUrl(result.processedUrl, result.mimeType);
-    const heuristicVerification = await verifyEnhancementOutput({
+  const buildPromptPackageForPlan = async (plan: EnhancementPlan, variant: "primary" | "retry", retryAdjustments?: string[]) => (
+    runPromptBuilderNode({
       presetId: args.presetId,
-      inputAnalysis: analysis,
-      output: result,
-    });
-    const verificationNode = await runVerificationNode({
-      presetId: args.presetId,
-      inputAnalysis: analysis,
-      outputAnalysis: heuristicVerification.outputAnalysis,
-      promptPackage: pkg,
+      analysis,
+      intent: intent.data,
+      consistency: consistency.data,
+      selectedPlan: chooseCandidateFromPlan(plan),
+      consistencyMemory: consistencyMemoryBefore,
+      failedAttempts,
       config: args.config,
-      heuristicAccepted: heuristicVerification.accepted,
-      heuristicReasons: heuristicVerification.reasons,
-    });
+      variant,
+      retryAdjustments,
+    })
+  );
 
-    return {
-      result,
-      outputBuffer,
-      heuristicVerification,
-      verificationNode,
-    };
-  };
+  let promptPackage = await buildPromptPackageForPlan(activePlan, "primary");
 
   try {
-    let execution = await executeFal(promptPackage.data, "primary");
-    let finalVerification = execution.heuristicVerification;
-    let verificationNode = execution.verificationNode;
+    let planForExecution = applyPromptPackageToPlan({
+      plan: activePlan,
+      promptPackage: promptPackage.data,
+      stage: "primary",
+    });
+    let execution = await executePlan({
+      plan: planForExecution,
+      imageBuffer: args.imageBuffer,
+      originalMimeType: args.originalMimeType,
+      presetId: args.presetId,
+      requestId: args.requestId,
+      processors: args.processors,
+    });
+    let verificationState = await verifyExecution({
+      presetId: args.presetId,
+      inputAnalysis: analysis,
+      output: execution.result,
+      promptPackage: promptPackage.data,
+      config: args.config,
+    });
 
-    if (
-      (!execution.heuristicVerification.accepted || verificationNode.data.decision === "retry")
-      && args.presetId !== "clean-background"
-    ) {
-      retryApplied = true;
-      attemptedStrategies.push("fal-graph-retry");
-      promptPackage = await runPromptBuilderNode({
-        presetId: args.presetId,
-        analysis,
-        intent: intent.data,
-        consistency: consistency.data,
-        config: args.config,
-        variant: "retry",
-        retryAdjustments: verificationNode.data.promptAdjustments,
+    if (!verificationState.heuristicVerification.passed) {
+      failedAttempts.push(summarizeFailedAttempt({
+        plan: activePlan,
+        verification: verificationState.heuristicVerification,
+        promptPackage: promptPackage.data,
+      }));
+
+      const alternateCandidate = selectReplanCandidate({
+        candidates: activePlan.candidates ?? [],
+        attemptedCandidateIds,
+        currentCandidateId: activePlan.selectedCandidateId,
+        suggestedCandidateId: verificationState.heuristicVerification.suggestedReplan,
       });
-      const adjustedGuidanceScale = Math.max(
-        1,
-        Math.min(6, promptPackage.data.guidanceScale + verificationNode.data.guidanceScaleAdjustment),
-      );
-      promptPackage = {
-        ...promptPackage,
-        data: {
-          ...promptPackage.data,
-          guidanceScale: adjustedGuidanceScale,
-        },
-      };
-      execution = await executeFal(promptPackage.data, "retry");
-      finalVerification = execution.heuristicVerification;
-      verificationNode = execution.verificationNode;
+
+      if (alternateCandidate) {
+        retryApplied = true;
+        activePlan = buildEnhancementPlan({
+          presetId: args.presetId,
+          originalMimeType: args.originalMimeType,
+          analysis,
+          config: args.config,
+          forcedCandidateId: alternateCandidate.id,
+          promptVariant: "retry",
+          reasonOverride: `verification requested replanning to ${alternateCandidate.id} after the first output scored ${verificationState.heuristicVerification.score.toFixed(2)}.`,
+          consistencyMemory: consistencyMemoryBefore,
+        });
+        attemptedCandidateIds.push(alternateCandidate.id);
+        attemptedStrategies.push(alternateCandidate.id);
+        promptPackage = await buildPromptPackageForPlan(
+          activePlan,
+          "retry",
+          verificationState.verificationNode.data.promptAdjustments,
+        );
+        planForExecution = applyPromptPackageToPlan({
+          plan: activePlan,
+          promptPackage: promptPackage.data,
+          stage: "retry",
+        });
+        execution = await executePlan({
+          plan: planForExecution,
+          imageBuffer: args.imageBuffer,
+          originalMimeType: args.originalMimeType,
+          presetId: args.presetId,
+          requestId: args.requestId,
+          processors: args.processors,
+        });
+        verificationState = await verifyExecution({
+          presetId: args.presetId,
+          inputAnalysis: analysis,
+          output: execution.result,
+          promptPackage: promptPackage.data,
+          config: args.config,
+        });
+      } else if (
+        verificationState.verificationNode.data.decision === "retry"
+        && args.presetId !== "clean-background"
+      ) {
+        retryApplied = true;
+        attemptedStrategies.push(`${activePlan.selectedCandidateId ?? activePlan.strategy}-retry`);
+        promptPackage = await buildPromptPackageForPlan(
+          activePlan,
+          "retry",
+          verificationState.verificationNode.data.promptAdjustments,
+        );
+        promptPackage = {
+          ...promptPackage,
+          data: {
+            ...promptPackage.data,
+            guidanceScale: Math.max(
+              1,
+              Math.min(6, promptPackage.data.guidanceScale + verificationState.verificationNode.data.guidanceScaleAdjustment),
+            ),
+          },
+        };
+        planForExecution = applyPromptPackageToPlan({
+          plan: activePlan,
+          promptPackage: promptPackage.data,
+          stage: "retry",
+        });
+        execution = await executePlan({
+          plan: planForExecution,
+          imageBuffer: args.imageBuffer,
+          originalMimeType: args.originalMimeType,
+          presetId: args.presetId,
+          requestId: args.requestId,
+          processors: args.processors,
+        });
+        verificationState = await verifyExecution({
+          presetId: args.presetId,
+          inputAnalysis: analysis,
+          output: execution.result,
+          promptPackage: promptPackage.data,
+          config: args.config,
+        });
+      }
     }
+
+    consistencyMemoryAfter = updateConsistencyMemory({
+      previousMemory: consistencyMemoryBefore,
+      consistency: consistency.data,
+      outputAnalysis: verificationState.heuristicVerification.outputAnalysis,
+      promptPackage: promptPackage.data,
+    });
 
     logEvent("info", "orchestrator.graph.completed", {
       requestId: args.requestId,
       presetId: args.presetId,
+      analysisSummary: {
+        format: analysis.format,
+        dimensions: analysis.dimensions,
+        readyScore: analysis.marketplaceSignals.readyScore,
+        brightnessScore: analysis.quality.brightnessScore,
+        contrastScore: analysis.quality.contrastScore,
+        cropQuality: analysis.framing.cropQuality,
+        likelyWhiteBackground: analysis.background.likelyWhite,
+      },
       nodeOutputs: {
         intent: {
           source: intent.source,
@@ -225,25 +412,35 @@ async function executeFalWithGraph(args: {
           executionNotes: promptPackage.data.executionNotes,
         },
         verification: {
-          source: verificationNode.source,
-          model: verificationNode.model,
-          decision: verificationNode.data.decision,
-          reasons: verificationNode.data.reasons,
+          source: verificationState.verificationNode.source,
+          model: verificationState.verificationNode.model,
+          decision: verificationState.verificationNode.data.decision,
+          reasons: verificationState.verificationNode.data.reasons,
         },
       },
-      selectedPlan: "fal-graph",
+      selectedPlan: activePlan.selectedCandidateId ?? activePlan.strategy,
+      candidateScores: (activePlan.candidates ?? []).map((candidate) => ({
+        id: candidate.id,
+        score: candidate.score,
+        expectedQuality: candidate.expectedQuality,
+      })),
       promptPackageSummary: {
         guidanceScale: promptPackage.data.guidanceScale,
-        subjectClause: promptPackage.data.subjectClause,
-        sceneClause: promptPackage.data.sceneClause,
+        masterPrompt: promptPackage.data.masterPrompt.slice(0, 200),
+        recoveryPrompt: promptPackage.data.recoveryPrompt ?? null,
       },
-      falExecutionPath: ["fal"],
+      finalPath: execution.path,
       retryApplied,
       fallbackApplied,
+      failedAttempts,
       verificationResult: {
-        status: finalVerification.status,
-        reasons: finalVerification.reasons,
+        status: verificationState.heuristicVerification.status,
+        score: verificationState.heuristicVerification.score,
+        issues: verificationState.heuristicVerification.issues,
+        suggestedReplan: verificationState.heuristicVerification.suggestedReplan,
       },
+      consistencyMemoryBefore,
+      consistencyMemoryAfter,
     });
 
     return {
@@ -251,15 +448,18 @@ async function executeFalWithGraph(args: {
       outputBuffer: execution.outputBuffer,
       metadata: {
         analysis,
-        plan: initialGraphPlan,
+        plan: activePlan,
         intent,
         shotPlan,
         consistency,
         promptPackage,
-        verificationNode,
-        attemptedStrategies: attemptedStrategies as Array<"mock-only" | "sharp-only" | "ai-only" | "sharp-then-ai" | "ai-then-sharp">,
-        finalPath: ["fal"],
-        verification: finalVerification,
+        verificationNode: verificationState.verificationNode,
+        consistencyMemoryBefore,
+        consistencyMemoryAfter,
+        attemptedStrategies,
+        failedAttempts,
+        finalPath: execution.path,
+        verification: verificationState.heuristicVerification,
         fallbackApplied,
         retryApplied,
       },
@@ -277,6 +477,7 @@ async function executeFalWithGraph(args: {
       config: { ...args.config, processor: "sharp" },
       forcedStrategy: "sharp-only",
       reasonOverride: "FAL graph failed, so orchestration fell back to deterministic sharp execution.",
+      consistencyMemory: consistencyMemoryBefore,
     });
     attemptedStrategies.push("sharp-only");
     logError("orchestrator.graph_failed", error, {
@@ -302,13 +503,16 @@ async function executeFalWithGraph(args: {
       outputBuffer: execution.outputBuffer,
       metadata: {
         analysis,
-        plan: initialGraphPlan,
+        plan: sharpPlan,
         intent,
         shotPlan,
         consistency,
         promptPackage,
         verificationNode: null,
-        attemptedStrategies: attemptedStrategies as Array<"mock-only" | "sharp-only" | "ai-only" | "sharp-then-ai" | "ai-then-sharp">,
+        consistencyMemoryBefore,
+        consistencyMemoryAfter: consistencyMemoryBefore,
+        attemptedStrategies,
+        failedAttempts,
         finalPath: execution.path,
         verification,
         fallbackApplied,
@@ -319,7 +523,7 @@ async function executeFalWithGraph(args: {
 }
 
 export async function orchestrateEnhancement(input: OrchestratorInput): Promise<OrchestratedEnhancement> {
-  const config = input.config ?? readConfig();
+  const config = input.config ?? appConfig;
   const processors = input.processors ?? DEFAULT_PROCESSORS;
 
   if (config.processor === "fal") {
@@ -331,6 +535,7 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
       config,
       processors,
       userGoal: input.userGoal,
+      consistencyMemory: input.consistencyMemory,
     });
   }
 
@@ -340,8 +545,9 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
     originalMimeType: input.originalMimeType,
     analysis,
     config,
+    consistencyMemory: input.consistencyMemory,
   });
-  const attemptedStrategies = [initialPlan.strategy];
+  const attemptedStrategies = [initialPlan.selectedCandidateId ?? initialPlan.strategy];
   let activePlan = initialPlan;
   let fallbackApplied = false;
   let retryApplied = false;
@@ -369,8 +575,9 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
       config,
       forcedStrategy: activePlan.fallbackStrategy,
       reasonOverride: "AI execution failed, so orchestration fell back to deterministic processing.",
+      consistencyMemory: input.consistencyMemory,
     });
-    attemptedStrategies.push(activePlan.strategy);
+    attemptedStrategies.push(activePlan.selectedCandidateId ?? activePlan.strategy);
     logError("orchestrator.primary_failed", error, {
       requestId: input.requestId,
       presetId: input.presetId,
@@ -392,12 +599,16 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
     output: execution.result,
   });
 
-  if (!verification.accepted && verification.status === "retry" && verification.recommendedStrategy) {
-    const needsFallback =
-      activePlan.fallbackStrategy === verification.recommendedStrategy ||
-      verification.recommendedStrategy === "sharp-only";
+  const safeRecommendedStrategy = verification.recommendedStrategy?.includes("ai")
+      ? "sharp-only"
+      : verification.recommendedStrategy;
 
-    if (verification.recommendedStrategy !== activePlan.strategy) {
+  if (!verification.accepted && verification.status === "retry" && safeRecommendedStrategy) {
+    const needsFallback =
+      activePlan.fallbackStrategy === safeRecommendedStrategy ||
+      safeRecommendedStrategy === "sharp-only";
+
+    if (safeRecommendedStrategy !== activePlan.strategy) {
       retryApplied = true;
       fallbackApplied = fallbackApplied || needsFallback;
       activePlan = buildEnhancementPlan({
@@ -405,11 +616,12 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
         originalMimeType: input.originalMimeType,
         analysis,
         config,
-        forcedStrategy: verification.recommendedStrategy,
-        promptVariant: verification.recommendedStrategy.includes("ai") ? "retry" : undefined,
-        reasonOverride: `verification requested ${verification.recommendedStrategy} after the initial output missed quality checks.`,
+        forcedStrategy: safeRecommendedStrategy,
+        promptVariant: safeRecommendedStrategy.includes("ai") ? "retry" : undefined,
+        reasonOverride: `verification requested ${safeRecommendedStrategy} after the initial output missed quality checks.`,
+        consistencyMemory: input.consistencyMemory,
       });
-      attemptedStrategies.push(activePlan.strategy);
+      attemptedStrategies.push(activePlan.selectedCandidateId ?? activePlan.strategy);
       execution = await executePlan({
         plan: activePlan,
         imageBuffer: input.imageBuffer,
@@ -438,12 +650,13 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
       cropQuality: analysis.framing.cropQuality,
       likelyWhiteBackground: analysis.background.likelyWhite,
     },
-    chosenPlan: activePlan.strategy,
+    chosenPlan: activePlan.selectedCandidateId ?? activePlan.strategy,
     processorPath: execution.path,
     attemptedStrategies,
     fallbackApplied,
     retryApplied,
     verificationStatus: verification.status,
+    verificationScore: verification.score,
     verificationReasons: verification.reasons,
   });
 
@@ -452,13 +665,16 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
     outputBuffer: execution.outputBuffer,
     metadata: {
       analysis,
-      plan: initialPlan,
+      plan: activePlan,
       intent: null,
       shotPlan: null,
       consistency: null,
       promptPackage: null,
       verificationNode: null,
+      consistencyMemoryBefore: input.consistencyMemory ?? null,
+      consistencyMemoryAfter: input.consistencyMemory ?? null,
       attemptedStrategies,
+      failedAttempts: [],
       finalPath: execution.path,
       verification,
       fallbackApplied,

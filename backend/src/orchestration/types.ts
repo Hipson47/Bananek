@@ -65,6 +65,21 @@ export type ShotPlanCandidate = {
   riskFlags: string[];
 };
 
+export type ConsistencyMemory = {
+  backgroundStyle?: string;
+  lightingDirection?: string;
+  shadowStyle?: string;
+  cropStyle?: string;
+  colorTemperature?: string;
+};
+
+export type FailedAttemptSummary = {
+  candidatePlanId: string;
+  verificationScore: number;
+  issues: string[];
+  promptSnippet: string;
+};
+
 export type ConsistencySpec = {
   selectionMode: "selected" | "merged";
   selectedCandidateIds: Array<ShotPlanCandidate["candidateId"]>;
@@ -78,6 +93,12 @@ export type ConsistencySpec = {
 };
 
 export type PromptPackage = {
+  masterPrompt: string;
+  negativePrompt?: string;
+  consistencyRules: string[];
+  compositionRules: string[];
+  brandSafetyRules: string[];
+  recoveryPrompt?: string;
   promptText: string;
   negativePromptText: string;
   guidanceScale: number;
@@ -115,8 +136,28 @@ export type EnhancementPlanStrategy =
 
 export type EnhancementPlanStep = {
   processor: EnhancementProcessor;
-  purpose: "deterministic" | "creative" | "normalize";
+  purpose:
+    | "deterministic"
+    | "creative"
+    | "normalize"
+    | "repair"
+    | "background"
+    | "relight"
+    | "upscale";
+  label?: string;
   prompt?: AiPromptSpec;
+};
+
+export type CandidatePlan = {
+  id: string;
+  strategy: string;
+  orderedSteps: EnhancementPlanStep[];
+  estimatedCost: number;
+  estimatedLatency: number;
+  expectedQuality: number;
+  confidence: number;
+  score: number;
+  reasons: string[];
 };
 
 export type EnhancementPlan = {
@@ -125,9 +166,15 @@ export type EnhancementPlan = {
   steps: EnhancementPlanStep[];
   fallbackStrategy: EnhancementPlanStrategy | null;
   verificationPolicy: "accept" | "retry-once";
+  candidates?: CandidatePlan[];
+  selectedCandidateId?: string;
 };
 
 export type VerificationResult = {
+  passed: boolean;
+  score: number;
+  issues: string[];
+  suggestedReplan?: string | null;
   accepted: boolean;
   status: "accepted" | "retry" | "rejected";
   reasons: string[];
@@ -145,7 +192,10 @@ export type OrchestrationMetadata = {
   consistency: GraphNodeResult<ConsistencySpec> | null;
   promptPackage: GraphNodeResult<PromptPackage> | null;
   verificationNode: GraphNodeResult<VerificationDecision> | null;
-  attemptedStrategies: EnhancementPlanStrategy[];
+  consistencyMemoryBefore: ConsistencyMemory | null;
+  consistencyMemoryAfter: ConsistencyMemory | null;
+  attemptedStrategies: string[];
+  failedAttempts: FailedAttemptSummary[];
   finalPath: EnhancementProcessor[];
   verification: VerificationResult;
   fallbackApplied: boolean;
@@ -165,5 +215,6 @@ export type OrchestratorInput = {
   config: AppConfig;
   requestId?: string;
   userGoal?: string | null;
+  consistencyMemory?: ConsistencyMemory | null;
   processors?: EnhancementProcessorMap;
 };

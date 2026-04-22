@@ -29,10 +29,12 @@ Runnable product-photo enhancement slice for an automation-first e-commerce work
   - persisted output metadata and payloads
 - enhancement execution is orchestration-first:
   - structured image analysis
+  - candidate-graph planning with scored multi-step plans
   - OpenRouter planning graph for text intelligence
   - deterministic prompt fallback when OpenRouter is unavailable
+  - consistency memory for batch/catalog alignment
   - FAL-only image execution on the AI path
-  - output verification with one retry/fallback decision
+  - scored output verification with one retry or replan
 
 ## Current Product Flow
 
@@ -130,10 +132,11 @@ It now runs:
 1. `analyze`: derive structured image facts from the uploaded asset
 2. `intent normalization`: use OpenRouter to normalize preset + image facts into a strict JSON `intent_spec`
 3. `shot planning`: use OpenRouter to generate 3-4 bounded structured creative candidates
-4. `consistency normalization`: use OpenRouter to select or merge candidates into one consistent brief
-5. `prompt package generation`: build a FAL-ready package through structured JSON plus deterministic text materialization
-6. `execute`: run FAL as the only image-generation backend on the AI path
-7. `verify`: evaluate the output and optionally retry once or fall back to deterministic processing
+4. `candidate graph planning`: score 3-5 candidate execution plans such as `sharp_only`, `sharp_then_ai`, or `background_then_relight_then_upscale`
+5. `consistency normalization`: use OpenRouter to select or merge candidates into one consistent brief
+6. `prompt package generation`: build a rich FAL-ready package with master prompt, negative prompt, consistency rules, composition rules, and recovery prompt
+7. `execute`: run the chosen multi-step plan with FAL as the only image-generation backend on the AI path
+8. `verify`: score the output, optionally retry once, or replan onto the next-best candidate
 
 OpenRouter is used only for planning and normalization. FAL remains the image execution layer. AI prompt building stays internal-only and deterministic-first. The frontend still sends only:
 
@@ -150,6 +153,7 @@ Customer-facing behavior remains provider-safe:
 - outputs are persisted in SQLite and served from `/api/outputs/:outputId`
 - per-session credits, rate limits, and single-flight locks are enforced server-side
 - critical runtime state no longer depends on in-memory maps or JSON files
+- orchestration keeps lightweight consistency memory for batch-style catalog runs
 - orchestration decisions are observable in structured logs and backend tests
 
 ## Verification Gates

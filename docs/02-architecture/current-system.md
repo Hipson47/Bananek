@@ -19,13 +19,14 @@ Hono server (Node.js + TypeScript, port 3001)
   ├─ GET  /api/outputs/:id      → serve processed image (signed URL)
   └─ GET  /api/health           → liveness check
        │
-  Orchestration: analyze → plan → execute → verify
+  Orchestration: analyze → candidate-graph plan → execute → verify/replan
        │
   OpenRouter planning graph for `PROCESSOR=fal`:
     ├─ intent normalization (strict JSON)
     ├─ shot planning (3-4 structured candidates)
     ├─ consistency normalization
-    ├─ prompt package generation
+    ├─ candidate scoring + plan selection
+    ├─ rich prompt package generation
     └─ verification node
        │
   Processors (selected via PROCESSOR env var):
@@ -51,10 +52,11 @@ Hono server (Node.js + TypeScript, port 3001)
    - `analyze`: extract image facts (brightness, contrast, sharpness, background character, framing, marketplace readyScore) via sharp + 16x16 thumbnail.
    - `intent normalize`: OpenRouter converts preset + image facts (+ optional goal) into a strict JSON `intent_spec`.
    - `shot plan`: OpenRouter generates 3-4 bounded structured creative candidates.
-   - `consistency normalize`: OpenRouter selects or merges one final brief.
-   - `prompt package`: OpenRouter generates structured prompt ingredients; final prompt text is materialized deterministically.
-   - `execute`: FAL runs as the sole image-generation backend on the AI path.
-   - `verify`: heuristic checks plus a structured verification node may trigger one retry or fallback.
+   - `candidate graph`: deterministic planner scores 3-5 execution plans using blur, contrast, border, background, centering, readiness, and artifact-risk signals.
+   - `consistency normalize`: OpenRouter selects or merges one final brief, and lightweight consistency memory can carry catalog style across sequential runs.
+   - `prompt package`: OpenRouter generates structured prompt ingredients; final package includes `masterPrompt`, `negativePrompt`, consistency/composition/brand-safety rules, and an optional `recoveryPrompt`.
+   - `execute`: FAL runs as the sole image-generation backend on the AI path, possibly across multiple ordered steps inside the chosen candidate plan.
+   - `verify`: heuristic scoring plus a structured verification node may trigger one retry or replan to the next-best candidate.
 6. **Persistence**: output stored as BLOB in SQLite; signed URL generated with configurable TTL.
 7. **Response**: `ProcessedImageResult` with `processedUrl` pointing to `/api/outputs/:outputId?expires=...&sig=...`.
 8. **Error path**: on failure, credit is refunded via atomic transaction; processing lock is always released.
@@ -74,7 +76,7 @@ Hono server (Node.js + TypeScript, port 3001)
 | Entry point | `backend/src/index.ts` (createApp + serve) |
 | Routes | `backend/src/routes/enhance.ts` |
 | Config | `backend/src/config.ts` |
-| Orchestration | `backend/src/orchestration/*.ts` (analysis, OpenRouter client, intent/shot/consistency/prompt/verification nodes, deterministic planner fallback, enhancement-orchestrator, types) |
+| Orchestration | `backend/src/orchestration/*.ts` (analysis, candidate planner, OpenRouter client, intent/shot/consistency/prompt/verification nodes, consistency-memory, enhancement-orchestrator, types) |
 | Processors | `backend/src/processors/{sharp,fal,mock}-processor.ts`, `index.ts`, `contracts.ts` |
 | Storage | `backend/src/storage/{database,session-store,output-store,runtime-maintenance}.ts` |
 | Security | `backend/src/security/{rate-limiter,session-locks}.ts`, `backend/src/utils/signing.ts` |
@@ -83,7 +85,7 @@ Hono server (Node.js + TypeScript, port 3001)
 
 ## Test Coverage
 
-- 76 total tests (69 backend + 7 frontend)
+- 76+ total tests, including backend orchestration unit coverage for planner, prompt building, verification, fallback, and route behavior
 - Backend: route integration tests (SQLite test DB, mocked OpenRouter and FAL), sharp processor tests (real transforms), FAL processor tests (HTTP mocking), OpenRouter client tests, orchestration graph tests, validation tests
 - Frontend: BackendProcessor fetch mocking, file validation
 

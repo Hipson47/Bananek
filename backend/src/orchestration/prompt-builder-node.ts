@@ -3,12 +3,18 @@ import type { PresetId } from "../types.js";
 import { buildAiPrompt } from "./prompt-builder.js";
 import { callOpenRouterStructured, OpenRouterClientError } from "./openrouter-client.js";
 import { buildFallbackNodeResult, isNumberInRange, isObject, isStringArray, materializePromptText } from "./node-utils.js";
-import type { ConsistencySpec, GraphNodeResult, ImageAnalysis, IntentSpec, PromptPackage } from "./types.js";
+import type { CandidatePlan, ConsistencyMemory, ConsistencySpec, FailedAttemptSummary, GraphNodeResult, ImageAnalysis, IntentSpec, PromptPackage } from "./types.js";
 
 const PROMPT_PACKAGE_SCHEMA = {
   type: "object",
   additionalProperties: false,
   properties: {
+    masterPrompt: { type: "string" },
+    negativePrompt: { type: "string" },
+    consistencyRules: { type: "array", items: { type: "string" }, maxItems: 6 },
+    compositionRules: { type: "array", items: { type: "string" }, maxItems: 6 },
+    brandSafetyRules: { type: "array", items: { type: "string" }, maxItems: 6 },
+    recoveryPrompt: { type: "string" },
     subjectClause: { type: "string" },
     sceneClause: { type: "string" },
     lightingClause: { type: "string" },
@@ -19,6 +25,11 @@ const PROMPT_PACKAGE_SCHEMA = {
     guidanceScale: { type: "number" },
   },
   required: [
+    "masterPrompt",
+    "negativePrompt",
+    "consistencyRules",
+    "compositionRules",
+    "brandSafetyRules",
     "subjectClause",
     "sceneClause",
     "lightingClause",
@@ -37,6 +48,9 @@ function buildDeterministicPromptPackage(args: {
   analysis: ImageAnalysis;
   intent: IntentSpec;
   consistency: ConsistencySpec;
+  selectedPlan?: CandidatePlan | null;
+  consistencyMemory?: ConsistencyMemory | null;
+  failedAttempts?: FailedAttemptSummary[];
   variant: "primary" | "retry";
   retryAdjustments?: string[];
 }): PromptPackage {
@@ -45,9 +59,41 @@ function buildDeterministicPromptPackage(args: {
     analysis: args.analysis,
     originalMimeType: args.analysis.mimeType,
     variant: args.variant,
+    consistencyMemory: args.consistencyMemory,
+    failedAttempts: args.failedAttempts,
+    planId: args.selectedPlan?.id ?? null,
   });
+  const lastFailedAttempt = args.failedAttempts?.[args.failedAttempts.length - 1];
+  const consistencyRules = [
+    `Keep catalog background style aligned with ${args.consistency.finalBackground}.`,
+    `Maintain ${args.consistency.finalLighting.replace(/-/g, " ")} lighting consistency.`,
+    ...(args.consistencyMemory?.cropStyle ? [`Reuse crop style ${args.consistencyMemory.cropStyle}.`] : []),
+  ].slice(0, 6);
+  const compositionRules = [
+    `Use ${args.consistency.finalFraming.replace(/-/g, " ")} framing.`,
+    `Keep ${args.consistency.finalCrop} crop with balanced margins.`,
+    ...(args.selectedPlan?.orderedSteps.map((step) => `Support ${step.purpose} step intent.`) ?? []),
+  ].slice(0, 6);
+  const brandSafetyRules = [
+    "Do not change the product identity.",
+    "Do not add props, text, logos, or extra objects.",
+    "Keep materials and proportions realistic.",
+  ];
 
   const envelope: PromptPackageEnvelope = {
+    masterPrompt: [
+      deterministic.text,
+      `Background goal: ${args.consistency.finalBackground}.`,
+      `Framing goal: ${args.consistency.finalFraming}.`,
+      `Lighting goal: ${args.consistency.finalLighting}.`,
+    ].join(" "),
+    negativePrompt: "extra props, additional products, distorted geometry, text overlays, unnatural reflections",
+    consistencyRules,
+    compositionRules,
+    brandSafetyRules,
+    recoveryPrompt: args.variant === "retry" || lastFailedAttempt
+      ? `Recover from prior issues: ${(args.retryAdjustments ?? lastFailedAttempt?.issues ?? ["tighten execution"]).join(", ")}.`
+      : undefined,
     subjectClause: `Preserve the real product exactly with ${args.intent.detailGoal.replace(/-/g, " ")} priority.`,
     sceneClause: `Use ${args.consistency.finalBackground.replace(/-/g, " ")} background treatment with ${args.consistency.finalFraming.replace(/-/g, " ")} framing and ${args.consistency.finalCrop} crop.`,
     lightingClause: `Apply ${args.consistency.finalLighting.replace(/-/g, " ")} lighting while keeping the product realistic.`,
@@ -74,6 +120,12 @@ function buildDeterministicPromptPackage(args: {
 
 function isPromptPackageEnvelope(value: unknown): value is PromptPackageEnvelope {
   return isObject(value)
+    && typeof value.masterPrompt === "string"
+    && typeof value.negativePrompt === "string"
+    && isStringArray(value.consistencyRules, 6)
+    && isStringArray(value.compositionRules, 6)
+    && isStringArray(value.brandSafetyRules, 6)
+    && (value.recoveryPrompt === undefined || typeof value.recoveryPrompt === "string")
     && typeof value.subjectClause === "string"
     && typeof value.sceneClause === "string"
     && typeof value.lightingClause === "string"
@@ -89,6 +141,9 @@ export async function runPromptBuilderNode(args: {
   analysis: ImageAnalysis;
   intent: IntentSpec;
   consistency: ConsistencySpec;
+  selectedPlan?: CandidatePlan | null;
+  consistencyMemory?: ConsistencyMemory | null;
+  failedAttempts?: FailedAttemptSummary[];
   config: AppConfig;
   variant: "primary" | "retry";
   retryAdjustments?: string[];
@@ -123,6 +178,9 @@ export async function runPromptBuilderNode(args: {
             imageAnalysis: args.analysis,
             intent: args.intent,
             consistency: args.consistency,
+            selectedPlan: args.selectedPlan,
+            consistencyMemory: args.consistencyMemory,
+            failedAttempts: args.failedAttempts ?? [],
             retryAdjustments: args.retryAdjustments ?? [],
           }),
         },

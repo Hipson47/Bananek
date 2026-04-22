@@ -26,13 +26,17 @@ export function buildFallbackNodeResult<T>(data: T, reason: string): GraphNodeRe
 
 export function materializePromptText(promptPackage: Omit<PromptPackage, "promptText" | "negativePromptText">): Pick<PromptPackage, "promptText" | "negativePromptText"> {
   const positiveParts = [
+    promptPackage.masterPrompt,
+    ...promptPackage.consistencyRules,
+    ...promptPackage.compositionRules,
+    ...promptPackage.brandSafetyRules,
     promptPackage.subjectClause,
     promptPackage.sceneClause,
     promptPackage.lightingClause,
     promptPackage.detailClause,
     ...promptPackage.constraintClauses,
   ].filter(Boolean);
-  const negativePromptText = promptPackage.negativeClauses.join(", ");
+  const negativePromptText = promptPackage.negativePrompt || promptPackage.negativeClauses.join(", ");
 
   return {
     promptText: positiveParts.join(" "),

@@ -5,7 +5,7 @@ import { analyzeImage } from "../src/orchestration/analysis.js";
 import { runConsistencyNode } from "../src/orchestration/consistency-node.js";
 import { buildAiPrompt } from "../src/orchestration/prompt-builder.js";
 import { runPromptBuilderNode } from "../src/orchestration/prompt-builder-node.js";
-import { buildEnhancementPlan } from "../src/orchestration/planner.js";
+import { buildCandidatePlans, buildEnhancementPlan } from "../src/orchestration/planner.js";
 import { runShotPlannerNode } from "../src/orchestration/shot-planner-node.js";
 import { orchestrateEnhancement } from "../src/orchestration/enhancement-orchestrator.js";
 import { runIntentNode } from "../src/orchestration/intent-node.js";
@@ -101,6 +101,30 @@ describe("orchestration analysis", () => {
 });
 
 describe("orchestration planning", () => {
+  it("returns multiple scored candidate plans for the active processor", async () => {
+    const imageBuffer = await makeImage({
+      width: 1600,
+      height: 900,
+      format: "jpeg",
+      background: { r: 40, g: 40, b: 40 },
+    });
+    const analysis = await analyzeImage(imageBuffer, "image/jpeg");
+
+    const candidates = buildCandidatePlans({
+      presetId: "marketplace-ready",
+      analysis,
+      config: buildConfig({
+        processor: "fal",
+        processorFailurePolicy: "fallback-to-sharp",
+      }),
+    });
+
+    expect(candidates.length).toBeGreaterThanOrEqual(3);
+    expect(candidates.length).toBeLessThanOrEqual(5);
+    expect(candidates[0]?.score).toBeGreaterThan(0);
+    expect(candidates.every((candidate) => candidate.orderedSteps.length >= 1)).toBe(true);
+  });
+
   it("prefers a deterministic sharp-only plan when sharp is the active processor", async () => {
     const imageBuffer = await makeImage({
       width: 1200,
@@ -122,7 +146,7 @@ describe("orchestration planning", () => {
     expect(plan.fallbackStrategy).toBe(null);
   });
 
-  it("chooses an AI-led plan when FAL is active and the image is not marketplace-ready", async () => {
+  it("chooses a repair-first candidate for a weak marketplace input", async () => {
     const imageBuffer = await makeImage({
       width: 1600,
       height: 900,
@@ -141,10 +165,34 @@ describe("orchestration planning", () => {
       }),
     });
 
-    expect(plan.strategy).toBe("ai-then-sharp");
-    expect(plan.steps.map((step) => step.processor)).toEqual(["fal", "sharp"]);
+    expect(plan.candidates?.length).toBeGreaterThanOrEqual(3);
+    expect(plan.selectedCandidateId).not.toBe("sharp_only");
+    expect(plan.reason.toLowerCase()).toMatch(/repair|background|marketplace|heavy/);
+    expect(plan.steps.some((step) => step.processor === "fal")).toBe(true);
     expect(plan.fallbackStrategy).toBe("sharp-only");
-    expect(plan.reason).toContain("needs stronger marketplace correction");
+  });
+
+  it("chooses the minimal pipeline for a clean ready image", async () => {
+    const imageBuffer = await makeImage({
+      width: 1200,
+      height: 1200,
+      format: "png",
+      background: { r: 255, g: 255, b: 255 },
+    });
+    const analysis = await analyzeImage(imageBuffer, "image/png");
+
+    const plan = buildEnhancementPlan({
+      presetId: "marketplace-ready",
+      originalMimeType: "image/png",
+      analysis,
+      config: buildConfig({
+        processor: "fal",
+        processorFailurePolicy: "fallback-to-sharp",
+      }),
+    });
+
+    expect(plan.selectedCandidateId).toBe("sharp_only");
+    expect(plan.steps.map((step) => step.processor)).toEqual(["sharp"]);
   });
 });
 
@@ -301,6 +349,9 @@ describe("orchestration prompt builder", () => {
 
     expect(promptPackage.source).toBe("deterministic-fallback");
     expect(promptPackage.data.promptText.toLowerCase()).toContain("preserve the real product");
+    expect(promptPackage.data.masterPrompt.toLowerCase()).toContain("background goal");
+    expect(promptPackage.data.consistencyRules.length).toBeGreaterThan(0);
+    expect(promptPackage.data.brandSafetyRules).toContain("Do not change the product identity.");
   });
 });
 
@@ -332,9 +383,10 @@ describe("orchestration verification", () => {
 
     expect(verification.accepted).toBe(true);
     expect(verification.status).toBe("accepted");
+    expect(verification.score).toBeGreaterThanOrEqual(0.74);
   });
 
-  it("rejects a non-square marketplace output and recommends a deterministic retry", async () => {
+  it("rejects a non-square marketplace output and suggests replanning", async () => {
     const inputBuffer = await makeImage({
       width: 1600,
       height: 900,
@@ -361,11 +413,125 @@ describe("orchestration verification", () => {
 
     expect(verification.accepted).toBe(false);
     expect(verification.status).toBe("retry");
-    expect(verification.recommendedStrategy).toBe("sharp-only");
+    expect(verification.score).toBeLessThan(0.74);
+    expect(verification.suggestedReplan).toBeTruthy();
   });
 });
 
 describe("enhancement orchestrator", () => {
+  it("replans when verification fails on the first AI attempt", async () => {
+    const imageBuffer = await makeImage({
+      width: 1600,
+      height: 900,
+      format: "jpeg",
+      background: { r: 60, g: 60, b: 60 },
+    });
+    const failedOutputBuffer = await makeImage({
+      width: 1600,
+      height: 900,
+      format: "jpeg",
+      background: { r: 80, g: 80, b: 80 },
+    });
+    const successfulOutputBuffer = await makeImage({
+      width: 1000,
+      height: 1000,
+      format: "jpeg",
+      background: { r: 252, g: 252, b: 252 },
+    });
+
+    let executionCount = 0;
+    const respondWithSequencedOutput = async () => {
+      executionCount += 1;
+      return createResult({
+        filename: "product-marketplace-ready.jpg",
+        mimeType: "image/jpeg",
+        bytes: executionCount <= 3 ? failedOutputBuffer : successfulOutputBuffer,
+        processorLabel: "Marketplace Ready enhancement",
+      });
+    };
+
+    const processors = {
+      mock: vi.fn(),
+      sharp: vi.fn(respondWithSequencedOutput),
+      fal: vi.fn(respondWithSequencedOutput),
+    } as unknown as EnhancementProcessorMap;
+
+    const orchestrated = await orchestrateEnhancement({
+      imageBuffer,
+      originalMimeType: "image/jpeg",
+      presetId: "marketplace-ready",
+      config: buildConfig({
+        processor: "fal",
+        processorFailurePolicy: "fallback-to-sharp",
+      }),
+      processors,
+    });
+
+    expect((processors.fal as any).mock.calls.length + (processors.sharp as any).mock.calls.length).toBeGreaterThan(3);
+    expect(orchestrated.metadata.retryApplied).toBe(true);
+    expect(orchestrated.metadata.failedAttempts).toHaveLength(1);
+    expect(orchestrated.metadata.attemptedStrategies.length).toBeGreaterThanOrEqual(2);
+    expect(orchestrated.metadata.verification.passed).toBe(true);
+  });
+
+  it("reuses consistency memory across a batch", async () => {
+    const firstImage = await makeImage({
+      width: 1200,
+      height: 1200,
+      format: "png",
+      background: { r: 255, g: 255, b: 255 },
+    });
+    const outputBuffer = await makeImage({
+      width: 1000,
+      height: 1000,
+      format: "jpeg",
+      background: { r: 252, g: 252, b: 252 },
+    });
+
+    const processors = {
+      mock: vi.fn(),
+      sharp: vi.fn(async () => createResult({
+        filename: "product-marketplace-ready.jpg",
+        mimeType: "image/jpeg",
+        bytes: outputBuffer,
+        processorLabel: "Marketplace Ready enhancement",
+      })),
+      fal: vi.fn(async () => createResult({
+        filename: "product-marketplace-ready.jpg",
+        mimeType: "image/jpeg",
+        bytes: outputBuffer,
+        processorLabel: "Marketplace Ready enhancement",
+      })),
+    } as unknown as EnhancementProcessorMap;
+
+    const firstRun = await orchestrateEnhancement({
+      imageBuffer: firstImage,
+      originalMimeType: "image/png",
+      presetId: "marketplace-ready",
+      config: buildConfig({
+        processor: "fal",
+        processorFailurePolicy: "fallback-to-sharp",
+      }),
+      processors,
+    });
+
+    const secondRun = await orchestrateEnhancement({
+      imageBuffer: firstImage,
+      originalMimeType: "image/png",
+      presetId: "marketplace-ready",
+      config: buildConfig({
+        processor: "fal",
+        processorFailurePolicy: "fallback-to-sharp",
+      }),
+      consistencyMemory: firstRun.metadata.consistencyMemoryAfter,
+      processors,
+    });
+
+    expect(firstRun.metadata.consistencyMemoryAfter).toBeTruthy();
+    expect(secondRun.metadata.consistencyMemoryBefore).toEqual(firstRun.metadata.consistencyMemoryAfter);
+    expect(secondRun.metadata.promptPackage?.data.consistencyRules.join(" ").toLowerCase()).toContain("catalog");
+  });
+
   it("falls back to deterministic sharp-only execution when the AI path fails", async () => {
     const imageBuffer = await makeImage({
       width: 1600,
@@ -412,10 +578,10 @@ describe("enhancement orchestrator", () => {
     expect(processors.fal).toHaveBeenCalledTimes(1);
     expect(processors.sharp).toHaveBeenCalledTimes(1);
     expect(orchestrated.result.processedUrl).toMatch(/^data:image\/jpeg;base64,/);
-    expect(orchestrated.metadata.plan.strategy).toBe("ai-only");
+    expect(orchestrated.metadata.plan.strategy).toBe("sharp-only");
     expect(orchestrated.metadata.finalPath).toEqual(["sharp"]);
     expect(orchestrated.metadata.verification.status).toBe("accepted");
     expect(orchestrated.metadata.fallbackApplied).toBe(true);
-    expect(orchestrated.metadata.attemptedStrategies).toEqual(["fal-graph-primary", "sharp-only"]);
+    expect(orchestrated.metadata.attemptedStrategies).toEqual(["background_then_relight_then_upscale", "sharp-only"]);
   });
 });

@@ -31,6 +31,5 @@
 
 | Gap | Impact | Notes |
 |---|---|---|
-| No orchestration unit tests | Orchestrator, planner, and verifier are tested only through route integration tests | Add unit tests for analysis, plan selection, verification thresholds |
 | No load/stress testing | Unknown behavior under concurrent load | Add k6 or artillery test suite before production |
 | No E2E browser tests | Frontend tested only at unit level (fetch mocking) | Add Playwright tests for full upload→result flow |

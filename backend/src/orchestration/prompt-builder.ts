@@ -1,5 +1,5 @@
 import type { PresetId } from "../types.js";
-import type { AiPromptSpec, ImageAnalysis } from "./types.js";
+import type { AiPromptSpec, ConsistencyMemory, FailedAttemptSummary, ImageAnalysis } from "./types.js";
 
 function orderedDirectives(presetId: PresetId, analysis: ImageAnalysis, variant: "primary" | "retry"): string[] {
   const directives: string[] = [];
@@ -71,14 +71,32 @@ export function buildAiPrompt(args: {
   analysis: ImageAnalysis;
   originalMimeType: string;
   variant: "primary" | "retry";
+  consistencyMemory?: ConsistencyMemory | null;
+  failedAttempts?: FailedAttemptSummary[];
+  planId?: string | null;
 }): AiPromptSpec {
   const directives = orderedDirectives(args.presetId, args.analysis, args.variant);
+
+  if (args.consistencyMemory?.backgroundStyle) {
+    directives.push(`Match the established catalog background style: ${args.consistencyMemory.backgroundStyle}.`);
+  }
+
+  if (args.consistencyMemory?.lightingDirection) {
+    directives.push(`Keep lighting direction consistent with prior catalog images: ${args.consistencyMemory.lightingDirection}.`);
+  }
+
+  if (args.failedAttempts?.length) {
+    const lastAttempt = args.failedAttempts[args.failedAttempts.length - 1];
+    directives.push(`Avoid the previous failure pattern: ${lastAttempt.issues.slice(0, 2).join(", ")}.`);
+  }
+
   const text = [
     buildBaseInstruction(args.presetId),
+    args.planId ? `Candidate plan: ${args.planId}.` : null,
     `Input format: ${args.originalMimeType}.`,
     `Input frame: ${args.analysis.dimensions.width}x${args.analysis.dimensions.height}.`,
     ...directives,
-  ].join(" ");
+  ].filter(Boolean).join(" ");
 
   return {
     variant: args.variant,
