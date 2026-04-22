@@ -1,9 +1,10 @@
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import Database from "better-sqlite3";
 
-import { readConfig } from "../config.js";
+import { getConfig } from "../config.js";
 
 type Migration = {
   version: number;
@@ -90,9 +91,37 @@ const MIGRATIONS: Migration[] = [
 
 let database: Database.Database | null = null;
 let databasePath: string | null = null;
+const STORAGE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const BACKEND_ROOT = path.resolve(STORAGE_DIR, "../..");
+const REPO_ROOT = path.resolve(BACKEND_ROOT, "..");
+
+function resolveDatabasePath(targetPath: string): string {
+  if (path.isAbsolute(targetPath)) {
+    return targetPath;
+  }
+
+  return targetPath.startsWith("backend/")
+    ? path.resolve(REPO_ROOT, targetPath)
+    : path.resolve(BACKEND_ROOT, targetPath);
+}
+
+export function configureDatabase(targetPath: string): string {
+  const resolvedPath = resolveDatabasePath(targetPath);
+
+  if (databasePath && databasePath !== resolvedPath) {
+    closeDatabase();
+  }
+
+  databasePath = resolvedPath;
+  return resolvedPath;
+}
 
 function getConfiguredDatabasePath(): string {
-  return path.resolve(process.cwd(), readConfig().databasePath);
+  if (databasePath) {
+    return databasePath;
+  }
+
+  return configureDatabase(getConfig().databasePath);
 }
 
 function openDatabase(targetPath: string): Database.Database {

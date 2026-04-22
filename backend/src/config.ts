@@ -126,7 +126,21 @@ export function readConfig(): AppConfig {
   };
 }
 
-export const config = readConfig();
+let activeConfig = readConfig();
+
+export function getConfig(): AppConfig {
+  return activeConfig;
+}
+
+export function setActiveConfig(nextConfig: AppConfig): AppConfig {
+  activeConfig = nextConfig;
+  return activeConfig;
+}
+
+export function refreshConfigFromEnv(): AppConfig {
+  activeConfig = readConfig();
+  return activeConfig;
+}
 
 // Export requireEnv / optionalEnv so processors and routes can use the same
 // pattern when they need their own env vars.

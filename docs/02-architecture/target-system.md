@@ -47,5 +47,5 @@ This decision affects pricing, infrastructure, and UX and is the most important 
 | No Dockerfile or deployment config | Cannot deploy to any cloud provider | High — blocks launch |
 | No TLS/HTTPS enforcement | Insecure in production | High — blocks launch |
 | Dev-only session secret fallback | Security hole if accidentally deployed | Medium — easy fix |
-| Dead code (`validation.ts`) | Confusion for future developers | Low |
+| No browser E2E coverage | Regressions can slip through the real upload->result flow | Medium |
 | Single-node SQLite | Cannot run multiple instances | High — blocks horizontal scaling |

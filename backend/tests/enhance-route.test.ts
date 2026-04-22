@@ -1,8 +1,10 @@
+import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/index.js";
 import { clearRateLimits } from "../src/security/rate-limiter.js";
 import { closeDatabase, resetDatabaseForTests } from "../src/storage/database.js";
+import { cleanupExpiredRuntimeState } from "../src/storage/runtime-maintenance.js";
 import { getSession } from "../src/storage/session-store.js";
 
 const TINY_PNG_B64 =
@@ -358,6 +360,7 @@ describe("POST /api/enhance", () => {
     const enhanceBody = await enhanceRes.json();
 
     nowSpy.mockReturnValue(1_700_000_000_000 + 2_000);
+    await cleanupExpiredRuntimeState(Date.now());
 
     const outputRes = await app.request(enhanceBody.processedUrl, {
       method: "GET",
@@ -367,11 +370,189 @@ describe("POST /api/enhance", () => {
     expect(outputRes.status).toBe(404);
   });
 
+  it("freezes config for an app instance after startup", async () => {
+    process.env.PROCESSOR = "mock";
+    const app = createApp();
+    process.env.PROCESSOR = "fal";
+    process.env.FAL_API_KEY = "should-not-be-used";
+
+    const { cookie, sessionId } = await bootstrapSession(app);
+    const res = await postMultipart(app, { cookie, sessionId });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.processorLabel).toBe("Clean Background enhancement");
+    expect(body.filename).toBe("product-clean-background.png");
+  });
+
+  it("does not return success when final verification still fails", async () => {
+    process.env.PROCESSOR = "fal";
+    process.env.PROCESSOR_FAILURE_POLICY = "strict";
+    process.env.FAL_API_KEY = "test-fal-key";
+    process.env.OPENROUTER_API_KEY = "test-openrouter-key";
+
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const requestUrl = String(url);
+
+      if (requestUrl === "https://openrouter.ai/api/v1/chat/completions") {
+        const body = JSON.parse(String(init?.body));
+        const schemaName = body.response_format?.json_schema?.name;
+
+        const bySchema: Record<string, unknown> = {
+          intent_spec: {
+            presetId: "marketplace-ready",
+            customerGoal: null,
+            primaryObjective: "deliver a marketplace-ready listing image",
+            backgroundGoal: "pure-white",
+            framingGoal: "square-centered",
+            lightingGoal: "catalog-clean",
+            detailGoal: "catalog-clarity",
+            realismGuard: "strict",
+            emphasis: ["square framing", "white background"],
+          },
+          shot_plan_candidates: {
+            candidates: [
+              {
+                candidateId: "option-a",
+                title: "Weak plan",
+                framing: "balanced-centered",
+                background: "clean-white",
+                lighting: "catalog-clean",
+                crop: "balanced",
+                rationale: "first",
+                fitScore: 0.7,
+                riskFlags: [],
+              },
+              {
+                candidateId: "option-b",
+                title: "Alternate weak plan",
+                framing: "tight-product",
+                background: "neutral",
+                lighting: "neutral-lift",
+                crop: "tight",
+                rationale: "second",
+                fitScore: 0.68,
+                riskFlags: [],
+              },
+              {
+                candidateId: "option-c",
+                title: "Fallback weak plan",
+                framing: "balanced-centered",
+                background: "clean-white",
+                lighting: "catalog-clean",
+                crop: "balanced",
+                rationale: "third",
+                fitScore: 0.65,
+                riskFlags: [],
+              },
+            ],
+          },
+          consistency_spec: {
+            selectionMode: "selected",
+            selectedCandidateIds: ["option-a"],
+            finalFraming: "balanced-centered",
+            finalBackground: "clean-white",
+            finalLighting: "catalog-clean",
+            finalCrop: "balanced",
+            keepConstraints: ["preserve product geometry"],
+            avoidConstraints: ["no extra props"],
+            rationale: "best available candidate",
+          },
+          prompt_package: {
+            masterPrompt: "Marketplace-ready product image.",
+            negativePrompt: "extra props, color shift",
+            consistencyRules: ["keep product identity"],
+            compositionRules: ["keep centered framing"],
+            brandSafetyRules: ["do not add objects"],
+            recoveryPrompt: "retry with more cleanup",
+            subjectClause: "Preserve the product.",
+            sceneClause: "Use a commerce-friendly scene.",
+            lightingClause: "Use catalog lighting.",
+            detailClause: "Preserve details.",
+            constraintClauses: ["preserve product geometry"],
+            negativeClauses: ["no extra props"],
+            executionNotes: ["preset:marketplace-ready", "variant:primary"],
+            guidanceScale: 3.8,
+          },
+          verification_decision: {
+            decision: "retry",
+            confidence: 0.91,
+            reasons: ["output still misses marketplace criteria"],
+            promptAdjustments: ["increase cleanup strength"],
+            guidanceScaleAdjustment: 1,
+          },
+        };
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            model: "openai/gpt-4.1-mini",
+            choices: [{ message: { content: JSON.stringify(bySchema[schemaName]) } }],
+          }),
+        };
+      }
+
+      if (requestUrl.startsWith("https://fal.run/")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            images: [{ url: "https://fal.media/test/failing-result", content_type: "image/jpeg" }],
+          }),
+        };
+      }
+
+      if (requestUrl === "https://fal.media/test/failing-result") {
+        return {
+          ok: true,
+          status: 200,
+          headers: {
+            get: (name: string) => name.toLowerCase() === "content-length"
+              ? String(Buffer.from(TINY_JPEG_B64, "base64").byteLength)
+              : null,
+          },
+          arrayBuffer: async () => {
+            const buffer = Buffer.from(TINY_JPEG_B64, "base64");
+            return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+          },
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${requestUrl}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createApp();
+    const { cookie, sessionId } = await bootstrapSession(app);
+    const res = await postMultipart(app, {
+      cookie,
+      sessionId,
+      presetId: "marketplace-ready",
+      file: createPngFile(),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(500);
+    expect(body.error.kind).toBe("processing");
+    expect(body.error.message).toBe(
+      "We couldn't complete this enhancement. Try again or use a different product image.",
+    );
+  });
+
   it("runs the FAL path through OpenRouter planning while keeping the response contract stable", async () => {
     process.env.PROCESSOR = "fal";
     process.env.PROCESSOR_FAILURE_POLICY = "strict";
     process.env.FAL_API_KEY = "test-fal-key";
     process.env.OPENROUTER_API_KEY = "test-openrouter-key";
+    const marketplaceOutputBuffer = await sharp({
+      create: {
+        width: 1000,
+        height: 1000,
+        channels: 3,
+        background: { r: 252, g: 252, b: 252 },
+      },
+    }).png().toBuffer();
 
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
       const requestUrl = String(url);
@@ -491,11 +672,11 @@ describe("POST /api/enhance", () => {
           status: 200,
           headers: {
             get: (name: string) => name.toLowerCase() === "content-length"
-              ? String(Buffer.from(TINY_PNG_B64, "base64").byteLength)
+              ? String(marketplaceOutputBuffer.byteLength)
               : null,
           },
           arrayBuffer: async () => {
-            const buffer = Buffer.from(TINY_PNG_B64, "base64");
+            const buffer = marketplaceOutputBuffer;
             return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
           },
         };

@@ -55,8 +55,9 @@ For a deep read (after `AI_CONTEXT.md`):
 - [`phase1-backend-proxy.md`](05-specs/phase1-backend-proxy.md): tombstone — original spec for `/api/generate`
 
 ### 06-audits
-- [`latest-code-review.md`](06-audits/latest-code-review.md): full audit (2026-04-21)
-- [`latest-code-review-summary.md`](06-audits/latest-code-review-summary.md): top-10 issues with fix status
+- `docs/06-audits/` now contains redirect notes only; the active audit files live under [`docs/audits/`](audits/)
+- [`audits/latest-code-review.md`](audits/latest-code-review.md): full audit (2026-04-22)
+- [`audits/latest-code-review-summary.md`](audits/latest-code-review-summary.md): top-10 issues with fix status
 
 ### 07-meta
 - [`source-of-truth-rules.md`](07-meta/source-of-truth-rules.md): authority hierarchy and contradiction handling

@@ -1,4 +1,4 @@
-import { config as appConfig } from "../config.js";
+import { getConfig } from "../config.js";
 import { logError, logEvent } from "../utils/log.js";
 import { processImage as mockProcessImage } from "../processors/mock-processor.js";
 import { processImage as sharpProcessImage } from "../processors/sharp-processor.js";
@@ -32,6 +32,13 @@ const DEFAULT_PROCESSORS: EnhancementProcessorMap = {
   fal: falProcessImage,
 };
 
+function buildQualityVerificationError(): { kind: "processing"; message: string } {
+  return {
+    kind: "processing",
+    message: "Enhancement output failed quality verification.",
+  };
+}
+
 async function executePlan(args: {
   plan: EnhancementPlan;
   imageBuffer: Buffer;
@@ -57,7 +64,11 @@ async function executePlan(args: {
       args.presetId,
       {
         requestId: args.requestId,
-        stage: step.prompt?.variant === "retry" || index > 0 ? "retry" : "primary",
+        stage: step.prompt?.variant === "retry"
+          ? "retry"
+          : index === 0
+            ? "primary"
+            : "planned-followup",
         prompt: step.prompt,
       },
     );
@@ -144,14 +155,16 @@ async function verifyExecution(args: {
   output: OrchestratedEnhancement["result"];
   promptPackage: PromptPackage;
   config: OrchestratorInput["config"];
+  plan: EnhancementPlan;
 }): Promise<{
   heuristicVerification: VerificationResult;
-  verificationNode: Awaited<ReturnType<typeof runVerificationNode>>;
+  verificationNode: Awaited<ReturnType<typeof runVerificationNode>> | null;
 }> {
   const heuristicVerification = await verifyEnhancementOutput({
     presetId: args.presetId,
     inputAnalysis: args.inputAnalysis,
     output: args.output,
+    plan: args.plan,
   });
   const verificationNode = await runVerificationNode({
     presetId: args.presetId,
@@ -269,6 +282,7 @@ async function executeFalWithGraph(args: {
       output: execution.result,
       promptPackage: promptPackage.data,
       config: args.config,
+      plan: activePlan,
     });
 
     if (!verificationState.heuristicVerification.passed) {
@@ -286,6 +300,10 @@ async function executeFalWithGraph(args: {
       });
 
       if (alternateCandidate) {
+        const verificationNode = verificationState.verificationNode;
+        if (!verificationNode) {
+          throw buildQualityVerificationError();
+        }
         retryApplied = true;
         activePlan = buildEnhancementPlan({
           presetId: args.presetId,
@@ -302,7 +320,7 @@ async function executeFalWithGraph(args: {
         promptPackage = await buildPromptPackageForPlan(
           activePlan,
           "retry",
-          verificationState.verificationNode.data.promptAdjustments,
+          verificationNode.data.promptAdjustments,
         );
         planForExecution = applyPromptPackageToPlan({
           plan: activePlan,
@@ -323,17 +341,22 @@ async function executeFalWithGraph(args: {
           output: execution.result,
           promptPackage: promptPackage.data,
           config: args.config,
+          plan: activePlan,
         });
       } else if (
-        verificationState.verificationNode.data.decision === "retry"
+        verificationState.verificationNode?.data.decision === "retry"
         && args.presetId !== "clean-background"
       ) {
+        const verificationNode = verificationState.verificationNode;
+        if (!verificationNode) {
+          throw buildQualityVerificationError();
+        }
         retryApplied = true;
         attemptedStrategies.push(`${activePlan.selectedCandidateId ?? activePlan.strategy}-retry`);
         promptPackage = await buildPromptPackageForPlan(
           activePlan,
           "retry",
-          verificationState.verificationNode.data.promptAdjustments,
+          verificationNode.data.promptAdjustments,
         );
         promptPackage = {
           ...promptPackage,
@@ -341,7 +364,7 @@ async function executeFalWithGraph(args: {
             ...promptPackage.data,
             guidanceScale: Math.max(
               1,
-              Math.min(6, promptPackage.data.guidanceScale + verificationState.verificationNode.data.guidanceScaleAdjustment),
+              Math.min(6, promptPackage.data.guidanceScale + verificationNode.data.guidanceScaleAdjustment),
             ),
           },
         };
@@ -364,8 +387,51 @@ async function executeFalWithGraph(args: {
           output: execution.result,
           promptPackage: promptPackage.data,
           config: args.config,
+          plan: activePlan,
         });
       }
+    }
+
+    if (!verificationState.heuristicVerification.passed) {
+      if (
+        args.config.processorFailurePolicy === "fallback-to-sharp"
+        && activePlan.strategy !== "sharp-only"
+        && !attemptedStrategies.includes("sharp-only")
+      ) {
+        fallbackApplied = true;
+        activePlan = buildEnhancementPlan({
+          presetId: args.presetId,
+          originalMimeType: args.originalMimeType,
+          analysis,
+          config: { ...args.config, processor: "sharp" },
+          forcedStrategy: "sharp-only",
+          reasonOverride: `verification failed after ${activePlan.selectedCandidateId ?? activePlan.strategy}, so orchestration fell back to deterministic sharp execution.`,
+          consistencyMemory: consistencyMemoryBefore,
+        });
+        attemptedCandidateIds.push(activePlan.selectedCandidateId ?? activePlan.strategy);
+        attemptedStrategies.push(activePlan.selectedCandidateId ?? activePlan.strategy);
+        execution = await executePlan({
+          plan: activePlan,
+          imageBuffer: args.imageBuffer,
+          originalMimeType: args.originalMimeType,
+          presetId: args.presetId,
+          requestId: args.requestId,
+          processors: args.processors,
+        });
+        verificationState = {
+          heuristicVerification: await verifyEnhancementOutput({
+            presetId: args.presetId,
+            inputAnalysis: analysis,
+            output: execution.result,
+            plan: activePlan,
+          }),
+          verificationNode: null,
+        };
+      }
+    }
+
+    if (!verificationState.heuristicVerification.passed) {
+      throw buildQualityVerificationError();
     }
 
     consistencyMemoryAfter = updateConsistencyMemory({
@@ -412,10 +478,10 @@ async function executeFalWithGraph(args: {
           executionNotes: promptPackage.data.executionNotes,
         },
         verification: {
-          source: verificationState.verificationNode.source,
-          model: verificationState.verificationNode.model,
-          decision: verificationState.verificationNode.data.decision,
-          reasons: verificationState.verificationNode.data.reasons,
+          source: verificationState.verificationNode?.source ?? null,
+          model: verificationState.verificationNode?.model ?? null,
+          decision: verificationState.verificationNode?.data.decision ?? "accept",
+          reasons: verificationState.verificationNode?.data.reasons ?? [],
         },
       },
       selectedPlan: activePlan.selectedCandidateId ?? activePlan.strategy,
@@ -496,7 +562,12 @@ async function executeFalWithGraph(args: {
       presetId: args.presetId,
       inputAnalysis: analysis,
       output: execution.result,
+      plan: sharpPlan,
     });
+
+    if (!verification.passed) {
+      throw buildQualityVerificationError();
+    }
 
     return {
       result: execution.result,
@@ -523,7 +594,7 @@ async function executeFalWithGraph(args: {
 }
 
 export async function orchestrateEnhancement(input: OrchestratorInput): Promise<OrchestratedEnhancement> {
-  const config = input.config ?? appConfig;
+  const config = input.config ?? getConfig();
   const processors = input.processors ?? DEFAULT_PROCESSORS;
 
   if (config.processor === "fal") {
@@ -597,6 +668,7 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
     presetId: input.presetId,
     inputAnalysis: analysis,
     output: execution.result,
+    plan: activePlan,
   });
 
   const safeRecommendedStrategy = verification.recommendedStrategy?.includes("ai")
@@ -634,8 +706,13 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
         presetId: input.presetId,
         inputAnalysis: analysis,
         output: execution.result,
+        plan: activePlan,
       });
     }
+  }
+
+  if (!verification.passed) {
+    throw buildQualityVerificationError();
   }
 
   logEvent("info", "orchestrator.completed", {

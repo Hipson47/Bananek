@@ -23,9 +23,8 @@
 
 | Gap | Location | Action |
 |---|---|---|
-| Dead code: `validation.ts` | `backend/src/validation.ts` + `backend/tests/validation.test.ts` | Delete both files; real validation is `image-validation.ts` |
 | DEC-010 references dead architecture | `docs/04-decisions/decision-log.md` | DEC-010 talks about 50MB body limit for data URLs; actual limit is 20MB for multipart. Consider superseding. |
-| Audit findings doc partially stale | `docs/06-audits/latest-code-review.md` | Full audit text still describes pre-SQLite state; summary has been updated |
+| Redirect audit folder still exists | `docs/06-audits/latest-code-review*.md` | Keep as redirect stubs only; active audit files live under `docs/audits/` |
 
 ## Testing Gaps
 

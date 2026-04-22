@@ -32,7 +32,7 @@ Runnable product-photo enhancement slice for an automation-first e-commerce work
   - candidate-graph planning with scored multi-step plans
   - OpenRouter planning graph for text intelligence
   - deterministic prompt fallback when OpenRouter is unavailable
-  - consistency memory for batch/catalog alignment
+  - optional internal consistency hints for future batch/catalog callers
   - FAL-only image execution on the AI path
   - scored output verification with one retry or replan
 
@@ -133,10 +133,10 @@ It now runs:
 2. `intent normalization`: use OpenRouter to normalize preset + image facts into a strict JSON `intent_spec`
 3. `shot planning`: use OpenRouter to generate 3-4 bounded structured creative candidates
 4. `candidate graph planning`: score 3-5 candidate execution plans such as `sharp_only`, `sharp_then_ai`, or `background_then_relight_then_upscale`
-5. `consistency normalization`: use OpenRouter to select or merge candidates into one consistent brief
+5. `consistency normalization`: use OpenRouter to select or merge one consistent brief, with optional internal consistency hints when backend callers provide them
 6. `prompt package generation`: build a rich FAL-ready package with master prompt, negative prompt, consistency rules, composition rules, and recovery prompt
 7. `execute`: run the chosen multi-step plan with FAL as the only image-generation backend on the AI path
-8. `verify`: score the output, optionally retry once, or replan onto the next-best candidate
+8. `verify`: score the output, optionally retry once or replan once, then fail closed if the final output still misses the acceptance threshold
 
 OpenRouter is used only for planning and normalization. FAL remains the image execution layer. AI prompt building stays internal-only and deterministic-first. The frontend still sends only:
 
@@ -153,7 +153,9 @@ Customer-facing behavior remains provider-safe:
 - outputs are persisted in SQLite and served from `/api/outputs/:outputId`
 - per-session credits, rate limits, and single-flight locks are enforced server-side
 - critical runtime state no longer depends on in-memory maps or JSON files
-- orchestration keeps lightweight consistency memory for batch-style catalog runs
+- verified config is frozen at app startup and passed into runtime dependencies
+- expired runtime cleanup runs at startup and on a background interval, not on user requests
+- consistency memory remains an internal orchestration hint, not a current customer-mode capability
 - orchestration decisions are observable in structured logs and backend tests
 
 ## Verification Gates

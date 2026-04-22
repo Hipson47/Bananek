@@ -8,9 +8,12 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 
 import type { AppEnv } from "./app-env.js";
-import { readConfig } from "./config.js";
-import { enhanceRouter } from "./routes/enhance.js";
+import type { AppConfig } from "./config.js";
+import { refreshConfigFromEnv, setActiveConfig } from "./config.js";
+import { createEnhanceRouter } from "./routes/enhance.js";
 import { getSession } from "./storage/session-store.js";
+import { configureDatabase } from "./storage/database.js";
+import { cleanupExpiredRuntimeState, startRuntimeMaintenanceLoop } from "./storage/runtime-maintenance.js";
 import { logError, logEvent } from "./utils/log.js";
 import { unsignValue } from "./utils/signing.js";
 
@@ -23,8 +26,11 @@ function getClientIp(request: Request): string {
   return request.headers.get("x-real-ip")?.trim() || "unknown";
 }
 
-export function createApp() {
-  const config = readConfig();
+export function createApp(explicitConfig?: AppConfig) {
+  const config = explicitConfig ?? refreshConfigFromEnv();
+  setActiveConfig(config);
+  configureDatabase(config.databasePath);
+  void cleanupExpiredRuntimeState();
   const app = new Hono<AppEnv>();
 
   app.use(
@@ -81,7 +87,7 @@ export function createApp() {
     }
   });
 
-  app.route("/api", enhanceRouter);
+  app.route("/api", createEnhanceRouter(config));
 
   return app;
 }
@@ -92,7 +98,10 @@ const currentFilePath = fileURLToPath(import.meta.url);
 const entryFilePath = process.argv[1] ? path.resolve(process.argv[1]) : "";
 
 if (entryFilePath === currentFilePath) {
-  const config = readConfig();
+  const config = refreshConfigFromEnv();
+  setActiveConfig(config);
+  configureDatabase(config.databasePath);
+  startRuntimeMaintenanceLoop();
   serve({ fetch: app.fetch, port: config.port }, (info) => {
     logEvent("info", "server.started", {
       port: info.port,

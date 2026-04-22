@@ -5,7 +5,9 @@
 The repo now has a real session-backed MVP path. `/api/enhance` keeps the stable product entrypoint,
 but the backend now enforces signed sessions, persisted outputs, usage state, rate limits, stronger image
 validation, request IDs, structured logs, a SQLite-backed runtime core, and a deterministic-first
-enhancement orchestrator. OpenRouter now handles planning-only graph nodes for the FAL path. Next: payments,
+enhancement orchestrator. OpenRouter now handles planning-only graph nodes for the FAL path. Final
+verification is now authoritative, config is frozen per app instance at startup, and runtime cleanup no longer
+runs on user requests. Next: payments,
 cloud storage, and async jobs for AI-heavy traffic.
 
 ## Active Milestone
@@ -28,22 +30,26 @@ Production-readiness rescue pass -- coherent MVP path
   - image analysis
   - OpenRouter intent normalization
   - OpenRouter shot planning
+  - candidate scoring and plan selection
   - OpenRouter consistency normalization
   - OpenRouter prompt package generation
   - FAL execution
-  - output verification
+  - output verification with one retry/replan budget and fail-closed final gating
 - when OpenRouter planning fails, backend falls back to deterministic preset-based prompt construction
 - customer-facing UI no longer exposes provider/model details
 - session cookie + `X-Session-Id` header establish the active auth/session boundary
 - processed assets are persisted in SQLite and served from `/api/outputs/:outputId`
 - sessions, usage events, rate-limit counters, and processing locks are persisted in SQLite under `backend/data/app.sqlite`
 - restart-safe credit reservation and refund now run inside database transactions
-- `npm test` (root): 76 tests pass
-- `npm --prefix backend test`: 69 tests pass
+- deterministic planner paths no longer inflate fake candidate diversity
+- execution metadata now distinguishes planned follow-up steps from retries
+- internal consistency memory remains a backend-only hook; the customer product flow still processes one image at a time
+- `npm test` (root): 86 tests pass
+- `npm --prefix backend test`: 79 tests pass
 - `tsc --noEmit`: clean in both frontend and backend
 - `npm run build`: frontend production build succeeds
 - backend now has a real `build`/`start` path via compiled JS
-- `npm run verify`: passes
+- `npm run verify`: passes (typecheck, 86 root tests, frontend build, 79 backend tests, backend build, security audit)
 
 ## Processor / Preset Configuration
 

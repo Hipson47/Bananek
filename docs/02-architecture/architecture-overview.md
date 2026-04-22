@@ -29,6 +29,8 @@
 - the backend owns signed session issuance, request validation, abuse controls, automation orchestration, SQLite-backed runtime state, output persistence, and delivery
 - the default processor policy is deterministic-first; when `PROCESSOR=fal`, OpenRouter performs planning-only orchestration and FAL remains the only image-generation backend
 - orchestration now uses a scored candidate-plan graph instead of a single heuristic strategy switch
+- final verification is authoritative; failed outputs do not return success after the allowed retry/replan path
+- validated config is frozen at app startup and passed down into routes, DB, processors, and orchestration
 - provider details remain hidden from customer-facing UI and response messaging
 
 ## Key Systems And Boundaries
@@ -59,7 +61,8 @@ Owns:
 - response contract returned to the UI
 - persisted output delivery under `/api/outputs/:outputId`
 - SQLite persistence for sessions, outputs, rate-limit buckets, and processing locks
-- lightweight consistency memory for sequential catalog-style runs
+- background runtime maintenance outside the request path
+- internal consistency hints for future sequential catalog-style callers
 - future real-processing integration point
 
 Does not yet own:

@@ -6,9 +6,9 @@ Phase 3 AI integration is implemented via FAL.ai behind the existing `/api/enhan
 The current rollout hardened the customer product path with provider-safe metadata, explicit failure policy,
 and a SQLite-backed runtime core for sessions, credits, outputs, locks, and rate limits.
 The enhancement path is now orchestrated as an OpenRouter planning graph plus FAL execution:
-`analyze -> intent normalize -> shot plan -> consistency normalize -> prompt package -> execute -> verify`.
+`analyze -> candidate-plan selection -> prompt package -> execute -> verify`.
 OpenRouter is planning-only. FAL remains the image-generation backend. Deterministic prompt construction still exists as the fallback path.
-Next: move from single-node durable runtime to launch-grade infra: payments, cloud storage, and async jobs.
+Final verification now fails closed after the allowed retry/replan path. Config is frozen once per app instance at startup, and expired runtime cleanup runs outside the request path. Next: move from single-node durable runtime to launch-grade infra: payments, cloud storage, and async jobs.
 
 ## Decisions
 
@@ -34,6 +34,7 @@ Next: move from single-node durable runtime to launch-grade infra: payments, clo
 - Credit reserve/consume and refund must remain transactional.
 - Prompt construction must remain deterministic, preset-driven, and internal-only.
 - OpenRouter failures must degrade to deterministic preset-based planning, not to chat behavior.
+- Consistency memory is not a customer-mode feature yet; it is only an internal orchestration hint for future batch/catalog callers.
 
 ## Processor Selection
 
@@ -46,7 +47,6 @@ Next: move from single-node durable runtime to launch-grade infra: payments, clo
 ## Files/Systems Touched (recent)
 
 - `backend/src/processors/fal-processor.ts` -- new; FAL.ai AI processor
-- `backend/src/processors/index.ts` -- updated; supports sharp/fal/mock selection
 - `backend/src/config.ts` -- updated; session, database, limiter, output, and processor failure policy support
 - `backend/tests/fal-processor.test.ts` -- new; 17 tests (presets, auth header, error mapping)
 - `backend/src/storage/database.ts` -- new; SQLite bootstrap and migrations

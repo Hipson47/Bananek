@@ -144,6 +144,8 @@ describe("orchestration planning", () => {
     expect(plan.strategy).toBe("sharp-only");
     expect(plan.steps.map((step) => step.processor)).toEqual(["sharp"]);
     expect(plan.fallbackStrategy).toBe(null);
+    expect(plan.candidates).toHaveLength(1);
+    expect(plan.selectedCandidateId).toBe("sharp_only");
   });
 
   it("chooses a repair-first candidate for a weak marketplace input", async () => {
@@ -419,6 +421,57 @@ describe("orchestration verification", () => {
 });
 
 describe("enhancement orchestrator", () => {
+  it("labels planned follow-up steps separately from retries", async () => {
+    const imageBuffer = await makeImage({
+      width: 1600,
+      height: 900,
+      format: "jpeg",
+      background: { r: 40, g: 40, b: 40 },
+    });
+    const successfulOutputBuffer = await makeImage({
+      width: 1000,
+      height: 1000,
+      format: "jpeg",
+      background: { r: 252, g: 252, b: 252 },
+    });
+
+    const processors = {
+      mock: vi.fn(),
+      sharp: vi.fn(async () => createResult({
+        filename: "product-marketplace-ready.jpg",
+        mimeType: "image/jpeg",
+        bytes: successfulOutputBuffer,
+        processorLabel: "Marketplace Ready enhancement",
+      })),
+      fal: vi.fn(async () => createResult({
+        filename: "product-marketplace-ready.jpg",
+        mimeType: "image/jpeg",
+        bytes: successfulOutputBuffer,
+        processorLabel: "Marketplace Ready enhancement",
+      })),
+    } as unknown as EnhancementProcessorMap;
+
+    await orchestrateEnhancement({
+      imageBuffer,
+      originalMimeType: "image/jpeg",
+      presetId: "marketplace-ready",
+      config: buildConfig({
+        processor: "fal",
+        processorFailurePolicy: "fallback-to-sharp",
+      }),
+      processors,
+    });
+
+    const stages = [
+      ...(processors.fal as unknown as { mock: { calls: Array<[unknown, unknown, unknown, { stage: string }]> } }).mock.calls.map((call) => call[3].stage),
+      ...(processors.sharp as unknown as { mock: { calls: Array<[unknown, unknown, unknown, { stage: string }]> } }).mock.calls.map((call) => call[3].stage),
+    ];
+
+    expect(stages).toContain("primary");
+    expect(stages).toContain("planned-followup");
+    expect(stages).not.toContain("retry");
+  });
+
   it("replans when verification fails on the first AI attempt", async () => {
     const imageBuffer = await makeImage({
       width: 1600,
@@ -472,6 +525,51 @@ describe("enhancement orchestrator", () => {
     expect(orchestrated.metadata.failedAttempts).toHaveLength(1);
     expect(orchestrated.metadata.attemptedStrategies.length).toBeGreaterThanOrEqual(2);
     expect(orchestrated.metadata.verification.passed).toBe(true);
+  });
+
+  it("fails closed when final verification still fails under strict policy", async () => {
+    const imageBuffer = await makeImage({
+      width: 1600,
+      height: 900,
+      format: "jpeg",
+      background: { r: 60, g: 60, b: 60 },
+    });
+    const failedOutputBuffer = await makeImage({
+      width: 1600,
+      height: 900,
+      format: "jpeg",
+      background: { r: 70, g: 70, b: 70 },
+    });
+
+    const processors = {
+      mock: vi.fn(),
+      sharp: vi.fn(async () => createResult({
+        filename: "product-marketplace-ready.jpg",
+        mimeType: "image/jpeg",
+        bytes: failedOutputBuffer,
+        processorLabel: "Marketplace Ready enhancement",
+      })),
+      fal: vi.fn(async () => createResult({
+        filename: "product-marketplace-ready.jpg",
+        mimeType: "image/jpeg",
+        bytes: failedOutputBuffer,
+        processorLabel: "Marketplace Ready enhancement",
+      })),
+    } as unknown as EnhancementProcessorMap;
+
+    await expect(() => orchestrateEnhancement({
+      imageBuffer,
+      originalMimeType: "image/jpeg",
+      presetId: "marketplace-ready",
+      config: buildConfig({
+        processor: "fal",
+        processorFailurePolicy: "strict",
+      }),
+      processors,
+    })).rejects.toMatchObject({
+      kind: "processing",
+      message: "Enhancement output failed quality verification.",
+    });
   });
 
   it("reuses consistency memory across a batch", async () => {

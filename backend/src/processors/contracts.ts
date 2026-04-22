@@ -10,7 +10,7 @@ export type ProcessorPromptContext = {
 };
 
 export type ProcessorExecutionOptions = {
-  stage: "primary" | "retry" | "fallback";
+  stage: "primary" | "planned-followup" | "retry" | "fallback";
   requestId?: string;
   prompt?: ProcessorPromptContext;
 };

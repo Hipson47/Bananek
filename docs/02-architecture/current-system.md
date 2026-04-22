@@ -29,7 +29,7 @@ Hono server (Node.js + TypeScript, port 3001)
     ├─ rich prompt package generation
     └─ verification node
        │
-  Processors (selected via PROCESSOR env var):
+  Processors (selected at app startup via PROCESSOR env var):
     ├─ sharp (default): deterministic libvips transforms
     ├─ fal: image execution via FAL.ai (background-removal, FLUX Kontext)
     └─ mock: pass-through for testing
@@ -53,13 +53,14 @@ Hono server (Node.js + TypeScript, port 3001)
    - `intent normalize`: OpenRouter converts preset + image facts (+ optional goal) into a strict JSON `intent_spec`.
    - `shot plan`: OpenRouter generates 3-4 bounded structured creative candidates.
    - `candidate graph`: deterministic planner scores 3-5 execution plans using blur, contrast, border, background, centering, readiness, and artifact-risk signals.
-   - `consistency normalize`: OpenRouter selects or merges one final brief, and lightweight consistency memory can carry catalog style across sequential runs.
+   - `consistency normalize`: OpenRouter selects or merges one final brief. Optional internal consistency hints can influence sequential runs when supplied by backend callers; the customer frontend does not send them today.
    - `prompt package`: OpenRouter generates structured prompt ingredients; final package includes `masterPrompt`, `negativePrompt`, consistency/composition/brand-safety rules, and an optional `recoveryPrompt`.
-   - `execute`: FAL runs as the sole image-generation backend on the AI path, possibly across multiple ordered steps inside the chosen candidate plan.
-   - `verify`: heuristic scoring plus a structured verification node may trigger one retry or replan to the next-best candidate.
+   - `execute`: FAL runs as the sole image-generation backend on the AI path, possibly across multiple ordered steps inside the chosen candidate plan. Planned follow-up steps are tracked separately from retries.
+   - `verify`: heuristic scoring plus a structured verification node may trigger one retry or replan to the next-best candidate. If the final verification still fails, the request fails cleanly instead of returning success.
 6. **Persistence**: output stored as BLOB in SQLite; signed URL generated with configurable TTL.
 7. **Response**: `ProcessedImageResult` with `processedUrl` pointing to `/api/outputs/:outputId?expires=...&sig=...`.
 8. **Error path**: on failure, credit is refunded via atomic transaction; processing lock is always released.
+9. **Maintenance**: expired outputs, locks, and limiter buckets are cleaned at startup and on a background interval, not inline on user requests.
 
 ## Presets
 
@@ -77,7 +78,7 @@ Hono server (Node.js + TypeScript, port 3001)
 | Routes | `backend/src/routes/enhance.ts` |
 | Config | `backend/src/config.ts` |
 | Orchestration | `backend/src/orchestration/*.ts` (analysis, candidate planner, OpenRouter client, intent/shot/consistency/prompt/verification nodes, consistency-memory, enhancement-orchestrator, types) |
-| Processors | `backend/src/processors/{sharp,fal,mock}-processor.ts`, `index.ts`, `contracts.ts` |
+| Processors | `backend/src/processors/{sharp,fal,mock}-processor.ts`, `contracts.ts` |
 | Storage | `backend/src/storage/{database,session-store,output-store,runtime-maintenance}.ts` |
 | Security | `backend/src/security/{rate-limiter,session-locks}.ts`, `backend/src/utils/signing.ts` |
 | Validation | `backend/src/image-validation.ts` |
@@ -85,7 +86,7 @@ Hono server (Node.js + TypeScript, port 3001)
 
 ## Test Coverage
 
-- 76+ total tests, including backend orchestration unit coverage for planner, prompt building, verification, fallback, and route behavior
+- 79 backend tests plus frontend/root integration tests in the current verify flow
 - Backend: route integration tests (SQLite test DB, mocked OpenRouter and FAL), sharp processor tests (real transforms), FAL processor tests (HTTP mocking), OpenRouter client tests, orchestration graph tests, validation tests
 - Frontend: BackendProcessor fetch mocking, file validation
 
@@ -97,4 +98,4 @@ Hono server (Node.js + TypeScript, port 3001)
 - Deployment configuration (no Dockerfile, no reverse proxy, no TLS)
 - User accounts or authentication (sessions are anonymous, cookie-based)
 - Admin or playground mode (customer-mode only)
-- `backend/src/validation.ts` is dead code — not used by any route
+- Persisted catalog/batch consistency memory as a first-class product feature

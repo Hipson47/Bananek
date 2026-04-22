@@ -91,12 +91,6 @@ function generateCandidates(args: {
       buildCandidate("sharp_only", "sharp-only", [
         { processor: "sharp", purpose: "deterministic", label: "deterministic enhancement" },
       ]),
-      buildCandidate("conservative_marketplace_fix", "sharp-only", [
-        { processor: "sharp", purpose: "repair", label: "conservative catalog repair" },
-      ]),
-      buildCandidate("premium_retouch_pipeline", "sharp-only", [
-        { processor: "sharp", purpose: "repair", label: "premium deterministic retouch" },
-      ]),
     ];
   }
 

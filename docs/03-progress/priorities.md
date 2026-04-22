@@ -22,7 +22,7 @@ These should be done before scaling beyond a handful of users.
 
 6. **Processor strategy decision** — choose sharp-always, fal-always, or per-preset hybrid. This determines pricing, latency SLAs, and infrastructure cost.
 
-7. **Delete dead code** — remove `backend/src/validation.ts` and `backend/tests/validation.test.ts` (dead; real validation is in `image-validation.ts`).
+7. **Browser E2E coverage** — add Playwright coverage for the real upload -> session -> enhance -> output flow.
 
 ## Tier 3: Scale and Polish
 

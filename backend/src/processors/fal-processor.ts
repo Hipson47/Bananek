@@ -1,6 +1,6 @@
 import sharp from "sharp";
 
-import { readConfig, requireEnv } from "../config.js";
+import { getConfig, requireEnv } from "../config.js";
 import type { PresetId, ProcessedImageResult } from "../types.js";
 import { getCustomerProcessorLabel } from "./customer-label.js";
 import type { ProcessorExecutionOptions } from "./contracts.js";
@@ -161,7 +161,7 @@ function mapHttpError(status: number): FalError {
 }
 
 function ensureAllowedProviderUrl(urlString: string): URL {
-  const config = readConfig();
+  const config = getConfig();
   let parsed: URL;
 
   try {
