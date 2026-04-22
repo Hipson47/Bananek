@@ -47,6 +47,16 @@ export type AppConfig = {
   outputUrlTtlSeconds: number;
   sessionLockTtlMs: number;
   falAllowedHostSuffixes: string[];
+  openRouterApiKey: string | null;
+  openRouterBaseUrl: string;
+  openRouterTimeoutMs: number;
+  openRouterMaxRetries: number;
+  openRouterModelDefault: string;
+  openRouterModelIntent: string;
+  openRouterModelShotPlanner: string;
+  openRouterModelConsistency: string;
+  openRouterModelPromptBuilder: string;
+  openRouterModelVerification: string;
 };
 
 export function readConfig(): AppConfig {
@@ -85,6 +95,8 @@ export function readConfig(): AppConfig {
     .split(",")
     .map((value) => value.trim().replace(/^\*\./, ""))
     .filter(Boolean);
+  const rawOpenRouterApiKey = process.env.OPENROUTER_API_KEY?.trim() || null;
+  const openRouterModelDefault = optionalEnv("OPENROUTER_MODEL_DEFAULT", "openai/gpt-4.1-mini");
 
   return {
     port: rawPort,
@@ -101,6 +113,16 @@ export function readConfig(): AppConfig {
     outputUrlTtlSeconds: optionalNumberEnv("OUTPUT_URL_TTL_SECONDS", 3_600),
     sessionLockTtlMs: optionalNumberEnv("SESSION_LOCK_TTL_MS", 120_000),
     falAllowedHostSuffixes: rawFalAllowedHostSuffixes,
+    openRouterApiKey: rawOpenRouterApiKey,
+    openRouterBaseUrl: optionalEnv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+    openRouterTimeoutMs: optionalNumberEnv("OPENROUTER_TIMEOUT_MS", 12_000),
+    openRouterMaxRetries: optionalNumberEnv("OPENROUTER_MAX_RETRIES", 1),
+    openRouterModelDefault,
+    openRouterModelIntent: optionalEnv("OPENROUTER_MODEL_INTENT", openRouterModelDefault),
+    openRouterModelShotPlanner: optionalEnv("OPENROUTER_MODEL_SHOT_PLANNER", openRouterModelDefault),
+    openRouterModelConsistency: optionalEnv("OPENROUTER_MODEL_CONSISTENCY", openRouterModelDefault),
+    openRouterModelPromptBuilder: optionalEnv("OPENROUTER_MODEL_PROMPT_BUILDER", openRouterModelDefault),
+    openRouterModelVerification: optionalEnv("OPENROUTER_MODEL_VERIFICATION", openRouterModelDefault),
   };
 }
 

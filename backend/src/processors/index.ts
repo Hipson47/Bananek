@@ -16,45 +16,20 @@
 import { processImage as mockProcessImage } from "./mock-processor.js";
 import { processImage as sharpProcessImage } from "./sharp-processor.js";
 import { processImage as falProcessImage } from "./fal-processor.js";
-import { logError, logEvent } from "../utils/log.js";
 
 import type { PresetId, ProcessedImageResult } from "../types.js";
-
-function readProcessorFailurePolicy(): "strict" | "fallback-to-sharp" {
-  const raw = process.env.PROCESSOR_FAILURE_POLICY?.trim();
-  if (raw === "fallback-to-sharp") {
-    return "fallback-to-sharp";
-  }
-
-  return "strict";
-}
+import type { EnhancementProcessorMap, ProcessorExecutionOptions } from "./contracts.js";
 
 export function processImage(
   imageBuffer: Buffer,
   originalMime: string,
   presetId: PresetId,
+  options?: ProcessorExecutionOptions,
 ): Promise<ProcessedImageResult> {
   const proc = process.env.PROCESSOR;
-  const failurePolicy = readProcessorFailurePolicy();
-  if (proc === "mock") return mockProcessImage(imageBuffer, originalMime, presetId);
-  if (proc === "fal") {
-    return falProcessImage(imageBuffer, originalMime, presetId).catch((error) => {
-      if (failurePolicy !== "fallback-to-sharp") {
-        throw error;
-      }
-
-      logError("processor.fal.failed", error, {
-        presetId,
-        policy: failurePolicy,
-      });
-      logEvent("warn", "processor.fallback_to_sharp", {
-        presetId,
-        originalMime,
-      });
-      return sharpProcessImage(imageBuffer, originalMime, presetId);
-    });
-  }
-  return sharpProcessImage(imageBuffer, originalMime, presetId);
+  if (proc === "mock") return mockProcessImage(imageBuffer, originalMime, presetId, options);
+  if (proc === "fal") return falProcessImage(imageBuffer, originalMime, presetId, options);
+  return sharpProcessImage(imageBuffer, originalMime, presetId, options);
 }
 
 export function activeProcessorName(): "mock" | "sharp" | "fal" {
@@ -62,4 +37,18 @@ export function activeProcessorName(): "mock" | "sharp" | "fal" {
   if (proc === "mock") return "mock";
   if (proc === "fal") return "fal";
   return "sharp";
+}
+
+export function readProcessorFailurePolicy(): "strict" | "fallback-to-sharp" {
+  return process.env.PROCESSOR_FAILURE_POLICY?.trim() === "fallback-to-sharp"
+    ? "fallback-to-sharp"
+    : "strict";
+}
+
+export function getProcessorRegistry(): EnhancementProcessorMap {
+  return {
+    mock: mockProcessImage,
+    sharp: sharpProcessImage,
+    fal: falProcessImage,
+  };
 }

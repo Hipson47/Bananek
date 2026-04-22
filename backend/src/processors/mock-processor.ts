@@ -1,5 +1,6 @@
 import type { PresetId, ProcessedImageResult } from "../types.js";
 import { getCustomerProcessorLabel } from "./customer-label.js";
+import type { ProcessorExecutionOptions } from "./contracts.js";
 
 /**
  * Server-side mock processor.
@@ -31,6 +32,7 @@ export async function processImage(
   imageBuffer: Buffer,
   originalMime: string,
   presetId: PresetId,
+  _options?: ProcessorExecutionOptions,
 ): Promise<ProcessedImageResult> {
   // Simulate processing latency so the UI loading state is visible in dev
   await wait(SIMULATED_LATENCY_MS);

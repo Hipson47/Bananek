@@ -2,6 +2,8 @@ import sharp from "sharp";
 
 import type { PresetId, ProcessedImageResult } from "../types.js";
 import { getCustomerProcessorLabel } from "./customer-label.js";
+import type { ProcessorExecutionOptions } from "./contracts.js";
+import { encodeProcessedDataUrl } from "./data-url.js";
 
 /**
  * Phase 2 real image processor — powered by sharp / libvips.
@@ -94,6 +96,7 @@ export async function processImage(
   imageBuffer: Buffer,
   originalMime: string,
   presetId: PresetId,
+  _options?: ProcessorExecutionOptions,
 ): Promise<ProcessedImageResult> {
   const format = MIME_TO_FORMAT[originalMime];
   const ext = MIME_TO_EXT[originalMime] ?? "bin";
@@ -121,8 +124,7 @@ export async function processImage(
   // exceptions and are caught by the route's try/catch → 500 processing error.
   const outputBuffer = await pipeline.toBuffer();
 
-  const processedBase64 = outputBuffer.toString("base64");
-  const processedUrl = `data:${originalMime};base64,${processedBase64}`;
+  const processedUrl = encodeProcessedDataUrl(outputBuffer, originalMime);
 
   return {
     filename: `product-${presetId}.${ext}`,

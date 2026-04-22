@@ -9,7 +9,7 @@ import {
   parseJsonEnhanceBody,
   parseMultipartEnhanceBody,
 } from "../image-validation.js";
-import { processImage } from "../processors/index.js";
+import { orchestrateEnhancement } from "../orchestration/enhancement-orchestrator.js";
 import { consumeRateLimit } from "../security/rate-limiter.js";
 import {
   refundSessionCredit,
@@ -67,19 +67,6 @@ function toPublicErrorResponse(err: unknown): { status: 400 | 500; body: { error
       },
     },
   };
-}
-
-function decodeProcessedDataUrl(dataUrl: string, expectedMimeType: string): Buffer {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-
-  if (!match || match[1] !== expectedMimeType) {
-    throw {
-      kind: "processing" as const,
-      message: "Processor returned an invalid asset payload.",
-    };
-  }
-
-  return Buffer.from(match[2], "base64");
 }
 
 function applyRateLimitHeaders(c: Context<AppEnv>, remaining: number, resetAt: number): void {
@@ -255,6 +242,7 @@ router.post("/enhance", async (c) => {
             presetId: parsed.presetId,
             imageBuffer: parsed.imageBuffer,
             declaredMimeType: parsed.declaredMimeType,
+            userGoal: parsed.userGoal,
           });
     }
 
@@ -277,21 +265,19 @@ router.post("/enhance", async (c) => {
 
     reservedSessionId = reservedSession.id;
 
-    const processed = await processImage(
-      parsedInput.imageBuffer,
-      parsedInput.mimeType,
-      parsedInput.presetId,
-    );
-
-    const outputBytes = decodeProcessedDataUrl(
-      processed.processedUrl,
-      processed.mimeType,
-    );
+    const orchestrated = await orchestrateEnhancement({
+      imageBuffer: parsedInput.imageBuffer,
+      originalMimeType: parsedInput.mimeType,
+      presetId: parsedInput.presetId,
+      config,
+      requestId,
+      userGoal: parsedInput.userGoal,
+    });
     const storedOutput = await storeOutput({
-      bytes: outputBytes,
+      bytes: orchestrated.outputBuffer,
       sessionId: reservedSession.id,
-      filename: processed.filename,
-      mimeType: processed.mimeType,
+      filename: orchestrated.result.filename,
+      mimeType: orchestrated.result.mimeType,
       requestId,
       signingSecret: config.sessionSecret,
       urlTtlSeconds: config.outputUrlTtlSeconds,
@@ -306,13 +292,37 @@ router.post("/enhance", async (c) => {
       clientIp,
       presetId: parsedInput.presetId,
       outputId: storedOutput.outputId,
-      mimeType: processed.mimeType,
+      mimeType: orchestrated.result.mimeType,
       creditsRemaining: reservedSession.creditsRemaining,
+      orchestration: {
+        analysis: {
+          format: orchestrated.metadata.analysis.format,
+          dimensions: orchestrated.metadata.analysis.dimensions,
+          readyScore: orchestrated.metadata.analysis.marketplaceSignals.readyScore,
+          brightnessScore: orchestrated.metadata.analysis.quality.brightnessScore,
+        },
+        strategy: orchestrated.metadata.plan.strategy,
+        attemptedStrategies: orchestrated.metadata.attemptedStrategies,
+        finalPath: orchestrated.metadata.finalPath,
+        graph: {
+          intentSource: orchestrated.metadata.intent?.source ?? null,
+          shotPlannerSource: orchestrated.metadata.shotPlan?.source ?? null,
+          consistencySource: orchestrated.metadata.consistency?.source ?? null,
+          promptBuilderSource: orchestrated.metadata.promptPackage?.source ?? null,
+          verificationSource: orchestrated.metadata.verificationNode?.source ?? null,
+        },
+        fallbackApplied: orchestrated.metadata.fallbackApplied,
+        retryApplied: orchestrated.metadata.retryApplied,
+        verification: {
+          status: orchestrated.metadata.verification.status,
+          reasons: orchestrated.metadata.verification.reasons,
+        },
+      },
     });
 
     return c.json(
       {
-        ...processed,
+        ...orchestrated.result,
         processedUrl: storedOutput.processedUrl,
       },
       200,

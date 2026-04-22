@@ -17,6 +17,7 @@ const originalEnhanceRateLimitMax = process.env.ENHANCE_RATE_LIMIT_MAX;
 const originalDefaultSessionCredits = process.env.DEFAULT_SESSION_CREDITS;
 const originalDatabasePath = process.env.DATABASE_PATH;
 const originalOutputUrlTtlSeconds = process.env.OUTPUT_URL_TTL_SECONDS;
+const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
 
 function createPngFile(): File {
   return new File([Buffer.from(TINY_PNG_B64, "base64")], "shoe.png", {
@@ -90,6 +91,9 @@ afterAll(() => {
 
   if (originalOutputUrlTtlSeconds === undefined) delete process.env.OUTPUT_URL_TTL_SECONDS;
   else process.env.OUTPUT_URL_TTL_SECONDS = originalOutputUrlTtlSeconds;
+
+  if (originalOpenRouterApiKey === undefined) delete process.env.OPENROUTER_API_KEY;
+  else process.env.OPENROUTER_API_KEY = originalOpenRouterApiKey;
 });
 
 afterEach(async () => {
@@ -104,6 +108,7 @@ afterEach(async () => {
   delete process.env.FAL_API_KEY;
   process.env.DATABASE_PATH = "backend/data/test-runtime.sqlite";
   delete process.env.OUTPUT_URL_TTL_SECONDS;
+  delete process.env.OPENROUTER_API_KEY;
 });
 
 describe("GET /api/health", () => {
@@ -360,5 +365,158 @@ describe("POST /api/enhance", () => {
     });
 
     expect(outputRes.status).toBe(404);
+  });
+
+  it("runs the FAL path through OpenRouter planning while keeping the response contract stable", async () => {
+    process.env.PROCESSOR = "fal";
+    process.env.PROCESSOR_FAILURE_POLICY = "strict";
+    process.env.FAL_API_KEY = "test-fal-key";
+    process.env.OPENROUTER_API_KEY = "test-openrouter-key";
+
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const requestUrl = String(url);
+
+      if (requestUrl === "https://openrouter.ai/api/v1/chat/completions") {
+        const body = JSON.parse(String(init?.body));
+        const schemaName = body.response_format?.json_schema?.name;
+
+        const bySchema: Record<string, unknown> = {
+          intent_spec: {
+            presetId: "marketplace-ready",
+            customerGoal: null,
+            primaryObjective: "deliver a marketplace-ready listing image",
+            backgroundGoal: "pure-white",
+            framingGoal: "square-centered",
+            lightingGoal: "catalog-clean",
+            detailGoal: "catalog-clarity",
+            realismGuard: "strict",
+            emphasis: ["square framing", "white background"],
+          },
+          shot_plan_candidates: {
+            candidates: [
+              {
+                candidateId: "option-a",
+                title: "Balanced listing",
+                framing: "square-centered",
+                background: "pure-white",
+                lighting: "catalog-clean",
+                crop: "balanced",
+                rationale: "best fit",
+                fitScore: 0.95,
+                riskFlags: [],
+              },
+              {
+                candidateId: "option-b",
+                title: "Tighter crop",
+                framing: "tight-product",
+                background: "pure-white",
+                lighting: "catalog-clean",
+                crop: "tight",
+                rationale: "secondary",
+                fitScore: 0.75,
+                riskFlags: [],
+              },
+              {
+                candidateId: "option-c",
+                title: "Safer crop",
+                framing: "balanced-centered",
+                background: "clean-white",
+                lighting: "neutral-lift",
+                crop: "balanced",
+                rationale: "fallback",
+                fitScore: 0.65,
+                riskFlags: [],
+              },
+            ],
+          },
+          consistency_spec: {
+            selectionMode: "selected",
+            selectedCandidateIds: ["option-a"],
+            finalFraming: "square-centered",
+            finalBackground: "pure-white",
+            finalLighting: "catalog-clean",
+            finalCrop: "balanced",
+            keepConstraints: ["preserve product geometry", "preserve visible branding"],
+            avoidConstraints: ["no extra props", "no color shift"],
+            rationale: "Select the most commerce-ready candidate.",
+          },
+          prompt_package: {
+            subjectClause: "Preserve the real product exactly.",
+            sceneClause: "Use a pure white background with square centered framing.",
+            lightingClause: "Apply clean catalog lighting.",
+            detailClause: "Keep sharp detail and realistic materials.",
+            constraintClauses: ["preserve product geometry", "preserve visible branding"],
+            negativeClauses: ["no extra props", "no color shift"],
+            executionNotes: ["preset:marketplace-ready", "variant:primary"],
+            guidanceScale: 3.8,
+          },
+          verification_decision: {
+            decision: "accept",
+            confidence: 0.92,
+            reasons: [],
+            promptAdjustments: [],
+            guidanceScaleAdjustment: 0,
+          },
+        };
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            model: "openai/gpt-4.1-mini",
+            choices: [{ message: { content: JSON.stringify(bySchema[schemaName]) } }],
+          }),
+        };
+      }
+
+      if (requestUrl.startsWith("https://fal.run/")) {
+        const body = JSON.parse(String(init?.body));
+        expect(body.prompt).toContain("pure white background");
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            images: [{ url: "https://fal.media/test/result", content_type: "image/jpeg" }],
+          }),
+        };
+      }
+
+      if (requestUrl === "https://fal.media/test/result") {
+        return {
+          ok: true,
+          status: 200,
+          headers: {
+            get: (name: string) => name.toLowerCase() === "content-length"
+              ? String(Buffer.from(TINY_JPEG_B64, "base64").byteLength)
+              : null,
+          },
+          arrayBuffer: async () => {
+            const buffer = Buffer.from(TINY_JPEG_B64, "base64");
+            return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+          },
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${requestUrl}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const app = createApp();
+    const { cookie, sessionId } = await bootstrapSession(app);
+    const res = await postMultipart(app, {
+      cookie,
+      sessionId,
+      presetId: "marketplace-ready",
+      file: createPngFile(),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.filename).toBe("product-marketplace-ready.png");
+    expect(body.mimeType).toBe("image/png");
+    expect(body.processedUrl).toMatch(/^\/api\/outputs\/.+\?expires=\d+&sig=/);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("openrouter.ai"))).toBe(true);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("fal.run"))).toBe(true);
   });
 });

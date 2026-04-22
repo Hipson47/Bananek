@@ -31,12 +31,12 @@ The raw prompt playground remains allowed only as an internal/admin workflow.
 ## Read Order
 
 Agents should build context in this order:
-1. `AGENTS.md`
-2. `docs/README.md`
-3. `docs/working-memory.md`
-4. actual filesystem, code, tests, configs
-5. `docs/product-strategy-report.md`
-6. older docs only if still needed
+1. `AI_CONTEXT.md` — single-file handoff with everything needed to start
+2. `AGENTS.md` — this file; rules and constraints
+3. `docs/02-architecture/current-system.md` — verified system description
+4. `docs/03-progress/working-memory.md` — current objective and active constraints
+5. actual filesystem, code, tests, configs
+6. `docs/03-progress/priorities.md` — what to build next
 
 ## Repo Reality Rules
 
@@ -92,15 +92,16 @@ Agents should build context in this order:
 
 ## Coordination Rules
 
-- Use `docs/agent-work-map.md` for role boundaries.
-- Use `docs/task-decomposition.md` for workstream ownership.
-- Use `docs/progress-tracking.md` and `docs/progress/current-status.md` for shared progress.
-- Use `docs/open-questions-register.md` for unresolved decisions.
-- Use `docs/decisions/decision-log.md` for stable project decisions.
+- Use `docs/07-meta/agent-work-map.md` for role boundaries.
+- Use `docs/03-progress/current-status.md` for shared progress.
+- Use `docs/04-decisions/open-questions-register.md` for unresolved decisions.
+- Use `docs/04-decisions/decision-log.md` for stable project decisions.
+- Use `docs/03-progress/priorities.md` for what to build next.
 
 ## Documentation Sync Rules
 
 - Keep `README.md` truthful about what is actually present in the repo today.
-- Keep `docs/project-overview.md` focused on verified current state plus explicitly labeled target state.
-- Keep `docs/progress/current-status.md` limited to present blockers and immediate next actions.
+- Keep `AI_CONTEXT.md` current as the primary handoff file for new sessions.
+- Keep `docs/02-architecture/current-system.md` verified against actual code.
+- Keep `docs/03-progress/current-status.md` limited to present blockers and immediate next actions.
 - If a document is still useful but no longer current, relabel it as planned, historical, or superseded instead of silently preserving false claims.

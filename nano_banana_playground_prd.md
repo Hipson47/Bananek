@@ -2,6 +2,6 @@
 
 Original PRD for the prompt-based image generation playground. The active product direction
 is e-commerce photo enhancement (no prompts, preset-based), defined in
-[`docs/product-definition.md`](docs/product-definition.md).
+[`docs/01-product/product-definition.md`](docs/01-product/product-definition.md).
 
-Full historical document: [`docs/archive/nano-banana-playground-prd.md`](docs/archive/nano-banana-playground-prd.md)
+Full historical document: [`docs/08-archive/nano-banana-playground-prd.md`](docs/08-archive/nano-banana-playground-prd.md)

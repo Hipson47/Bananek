@@ -3,6 +3,8 @@ import sharp from "sharp";
 import { readConfig, requireEnv } from "../config.js";
 import type { PresetId, ProcessedImageResult } from "../types.js";
 import { getCustomerProcessorLabel } from "./customer-label.js";
+import type { ProcessorExecutionOptions } from "./contracts.js";
+import { encodeProcessedDataUrl } from "./data-url.js";
 
 /**
  * Phase 3 AI processor -- powered by FAL.ai.
@@ -76,7 +78,13 @@ class FalError extends Error {
 
 type PresetConfig = {
   readonly model: string;
-  buildPayload(imageDataUrl: string): Record<string, unknown>;
+  buildPayload(
+    imageDataUrl: string,
+    options?: {
+      promptText?: string;
+      guidanceScale?: number;
+    },
+  ): Record<string, unknown>;
   extractResultUrl(body: unknown): string;
 };
 
@@ -111,11 +119,12 @@ const PRESET_CONFIGS: Record<PresetId, PresetConfig> = {
 
   "marketplace-ready": {
     model: "fal-ai/flux-pro/kontext",
-    buildPayload: (imageDataUrl) => ({
+    buildPayload: (imageDataUrl, options) => ({
       image_url: imageDataUrl,
       prompt:
-        "Professional product photography on pure white background, square composition, enhanced contrast, sharp detail, commercial marketplace listing photo",
-      guidance_scale: 3.5,
+        options?.promptText
+        ?? "Professional product photography on pure white background, square composition, enhanced contrast, sharp detail, commercial marketplace listing photo",
+      guidance_scale: options?.guidanceScale ?? 3.5,
       num_images: 1,
     }),
     extractResultUrl: extractKontextUrl,
@@ -123,11 +132,12 @@ const PRESET_CONFIGS: Record<PresetId, PresetConfig> = {
 
   "studio-polish": {
     model: "fal-ai/flux-pro/kontext",
-    buildPayload: (imageDataUrl) => ({
+    buildPayload: (imageDataUrl, options) => ({
       image_url: imageDataUrl,
       prompt:
-        "Professional studio product photography, premium editorial quality, beautiful lighting, rich tones, fine detail, flagship product listing",
-      guidance_scale: 3.5,
+        options?.promptText
+        ?? "Professional studio product photography, premium editorial quality, beautiful lighting, rich tones, fine detail, flagship product listing",
+      guidance_scale: options?.guidanceScale ?? 3.5,
       num_images: 1,
     }),
     extractResultUrl: extractKontextUrl,
@@ -287,6 +297,7 @@ export async function processImage(
   imageBuffer: Buffer,
   originalMime: string,
   presetId: PresetId,
+  options?: ProcessorExecutionOptions,
 ): Promise<ProcessedImageResult> {
   // requireEnv is called here (not at module level) so the server can import
   // this module without a key configured when PROCESSOR != "fal".
@@ -298,7 +309,14 @@ export async function processImage(
   const inputDataUrl = `data:${originalMime};base64,${imageBuffer.toString("base64")}`;
 
   // 2. Call FAL API for creative transformation
-  const responseBody = await callFalApi(config.model, config.buildPayload(inputDataUrl), apiKey);
+  const responseBody = await callFalApi(
+    config.model,
+    config.buildPayload(inputDataUrl, {
+      promptText: options?.prompt?.text,
+      guidanceScale: options?.prompt?.guidanceScale,
+    }),
+    apiKey,
+  );
 
   // 3. Extract CDN image URL from provider response
   const cdnUrl = config.extractResultUrl(responseBody);
@@ -309,8 +327,7 @@ export async function processImage(
   // 5. Normalise format + dimensions via sharp
   const outputBuffer = await postProcess(aiBytes, originalMime, presetId);
 
-  const processedBase64 = outputBuffer.toString("base64");
-  const processedUrl = `data:${originalMime};base64,${processedBase64}`;
+  const processedUrl = encodeProcessedDataUrl(outputBuffer, originalMime);
 
   return {
     filename: `product-${presetId}.${ext}`,
