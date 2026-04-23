@@ -1,7 +1,7 @@
 import { cleanupExpiredOutputs } from "./output-store.js";
 import { cleanupExpiredSessionProcessingLocks } from "../security/session-locks.js";
-import { getDatabase } from "./database.js";
-import { logError } from "../utils/log.js";
+import { cleanupExpiredRateLimits } from "../security/rate-limiter.js";
+import { logError, logEvent } from "../utils/log.js";
 import { cleanupExpiredJobs } from "../jobs/job-store.js";
 import { getConfig } from "../config.js";
 
@@ -10,10 +10,19 @@ let maintenanceTimer: NodeJS.Timeout | null = null;
 export async function cleanupExpiredRuntimeState(
   nowMs = Date.now(),
 ): Promise<void> {
-  await cleanupExpiredOutputs(Math.floor(nowMs / 1000));
-  await cleanupExpiredJobs(getConfig().jobRetentionSeconds, Math.floor(nowMs / 1000));
-  cleanupExpiredSessionProcessingLocks(nowMs);
-  getDatabase().prepare("DELETE FROM rate_limits WHERE reset_at <= ?").run(nowMs);
+  const expiredOutputs = await cleanupExpiredOutputs(Math.floor(nowMs / 1000));
+  const expiredJobs = await cleanupExpiredJobs(getConfig().jobRetentionSeconds, Math.floor(nowMs / 1000));
+  const expiredLocks = cleanupExpiredSessionProcessingLocks(nowMs);
+  const expiredRateLimits = cleanupExpiredRateLimits(nowMs);
+
+  if (expiredOutputs > 0 || expiredJobs > 0 || expiredLocks > 0 || expiredRateLimits > 0) {
+    logEvent("info", "runtime_maintenance.cleaned", {
+      expiredOutputs,
+      expiredJobs,
+      expiredLocks,
+      expiredRateLimits,
+    });
+  }
 }
 
 export function startRuntimeMaintenanceLoop(intervalMs = 60_000): void {

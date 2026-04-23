@@ -1,4 +1,6 @@
+import { getConnInfo } from "@hono/node-server/conninfo";
 import { serve } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
@@ -12,23 +14,16 @@ import type { AppConfig } from "./config.js";
 import { refreshConfigFromEnv, setActiveConfig } from "./config.js";
 import { createEnhanceRouter } from "./routes/enhance.js";
 import { getSession } from "./storage/session-store.js";
-import { configureDatabase } from "./storage/database.js";
-import { cleanupExpiredRuntimeState, startRuntimeMaintenanceLoop } from "./storage/runtime-maintenance.js";
-import { prepareJobWorkerForStartup, startJobWorkerLoop } from "./jobs/job-worker.js";
+import { closeDatabase, configureDatabase } from "./storage/database.js";
+import { cleanupExpiredRuntimeState, startRuntimeMaintenanceLoop, stopRuntimeMaintenanceLoop } from "./storage/runtime-maintenance.js";
+import { prepareJobWorkerForStartup, shutdownJobWorker, startJobWorkerLoop } from "./jobs/job-worker.js";
 import { logError, logEvent } from "./utils/log.js";
 import { unsignValue } from "./utils/signing.js";
-
-function getClientIp(request: Request): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0].trim();
-  }
-
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
-}
+import { extractClientIp, parseTrustedProxyRules } from "./security/request-trust.js";
 
 export function createApp(explicitConfig?: AppConfig) {
   const config = explicitConfig ?? refreshConfigFromEnv();
+  const trustedProxyRules = parseTrustedProxyRules(config.trustedProxyRanges);
   setActiveConfig(config);
   configureDatabase(config.databasePath);
   const app = new Hono<AppEnv>();
@@ -48,9 +43,21 @@ export function createApp(explicitConfig?: AppConfig) {
   app.use("/api/*", async (c, next) => {
     const requestId = randomUUID();
     const startedAt = Date.now();
+    let remoteAddress: string | null = null;
+
+    try {
+      remoteAddress = getConnInfo(c).remote.address ?? null;
+    } catch {
+      remoteAddress = c.env.incoming?.socket.remoteAddress ?? null;
+    }
 
     c.set("requestId", requestId);
-    c.set("clientIp", getClientIp(c.req.raw));
+    c.set("clientIp", extractClientIp({
+      remoteAddress,
+      xForwardedFor: c.req.header("x-forwarded-for") ?? null,
+      xRealIp: c.req.header("x-real-ip") ?? null,
+      trustedProxyRules,
+    }));
     c.set("session", null);
     c.header("X-Request-Id", requestId);
 
@@ -97,6 +104,51 @@ const app = createApp();
 const currentFilePath = fileURLToPath(import.meta.url);
 const entryFilePath = process.argv[1] ? path.resolve(process.argv[1]) : "";
 
+let shuttingDown = false;
+
+function installGracefulShutdown(server: ServerType, config: AppConfig): void {
+  const shutdown = async (signal: string) => {
+    if (shuttingDown) {
+      return;
+    }
+
+    shuttingDown = true;
+    logEvent("warn", "shutdown.started", {
+      signal,
+    });
+
+    stopRuntimeMaintenanceLoop();
+    server.close();
+
+    try {
+      const workerShutdown = await shutdownJobWorker({
+        drainTimeoutMs: config.shutdownDrainTimeoutMs,
+      });
+
+      closeDatabase();
+
+      logEvent(workerShutdown.drained ? "info" : "warn", "shutdown.completed", {
+        signal,
+        drained: workerShutdown.drained,
+        activeJobId: workerShutdown.activeJobId,
+      });
+    } catch (error) {
+      logError("shutdown.failed", error, {
+        signal,
+      });
+    } finally {
+      process.exit(0);
+    }
+  };
+
+  process.once("SIGINT", () => {
+    void shutdown("SIGINT");
+  });
+  process.once("SIGTERM", () => {
+    void shutdown("SIGTERM");
+  });
+}
+
 if (entryFilePath === currentFilePath) {
   const config = refreshConfigFromEnv();
   setActiveConfig(config);
@@ -109,13 +161,16 @@ if (entryFilePath === currentFilePath) {
   });
   startJobWorkerLoop(config);
   startRuntimeMaintenanceLoop();
-  serve({ fetch: app.fetch, port: config.port }, (info) => {
+  const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
     logEvent("info", "server.started", {
       port: info.port,
       processor: config.processor,
       processorFailurePolicy: config.processorFailurePolicy,
+      trustedProxyRanges: config.trustedProxyRanges,
+      allowedHosts: config.allowedHosts,
     });
   });
+  installGracefulShutdown(server, config);
 }
 
 export { app };

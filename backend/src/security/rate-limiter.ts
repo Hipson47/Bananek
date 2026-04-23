@@ -19,17 +19,19 @@ export function consumeRateLimit(
   const now = Date.now();
 
   const result = db.transaction(() => {
-    db.prepare("DELETE FROM rate_limits WHERE reset_at <= ?").run(now);
-
     const row = db.prepare(
       "SELECT count, reset_at FROM rate_limits WHERE bucket = ?",
     ).get(bucket) as RateLimitRow | undefined;
 
-    if (!row) {
+    if (!row || row.reset_at <= now) {
       const resetAt = now + windowMs;
-      db.prepare(
-        "INSERT INTO rate_limits (bucket, count, reset_at) VALUES (?, ?, ?)",
-      ).run(bucket, 1, resetAt);
+      db.prepare(`
+        INSERT INTO rate_limits (bucket, count, reset_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(bucket) DO UPDATE SET
+          count = excluded.count,
+          reset_at = excluded.reset_at
+      `).run(bucket, 1, resetAt);
 
       return {
         remaining: Math.max(0, maxRequests - 1),
@@ -58,4 +60,10 @@ export function consumeRateLimit(
 export function clearRateLimits(): void {
   const db = getDatabase();
   db.prepare("DELETE FROM rate_limits").run();
+}
+
+export function cleanupExpiredRateLimits(nowMs = Date.now()): number {
+  const db = getDatabase();
+  const result = db.prepare("DELETE FROM rate_limits WHERE reset_at <= ?").run(nowMs);
+  return result.changes;
 }

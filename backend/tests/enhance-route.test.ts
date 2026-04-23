@@ -229,6 +229,52 @@ describe("POST /api/enhance", () => {
     expect(res.status).toBe(401);
   });
 
+  it("rejects browser requests from disallowed origins", async () => {
+    const app = createApp();
+    const { cookie, sessionId } = await bootstrapSession(app);
+    const res = await app.request("/api/enhance", {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        "X-Session-Id": sessionId,
+        Origin: "https://evil.example",
+      },
+      body: (() => {
+        const formData = new FormData();
+        formData.append("presetId", "clean-background");
+        formData.append("image", createPngFile());
+        return formData;
+      })(),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error.message).toContain("origin");
+  });
+
+  it("rejects state-changing requests for disallowed hosts when the host header is present", async () => {
+    const app = createApp();
+    const { cookie, sessionId } = await bootstrapSession(app);
+    const formData = new FormData();
+    formData.append("presetId", "clean-background");
+    formData.append("image", createPngFile());
+
+    const res = await app.request("/api/enhance", {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        "X-Session-Id": sessionId,
+        Origin: "http://localhost:5173",
+        Host: "evil.example",
+      },
+      body: formData,
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(403);
+    expect(body.error.message).toContain("host");
+  });
+
   it("stores processed output and returns a persisted asset URL", async () => {
     const app = createApp();
     const { cookie, sessionId } = await bootstrapSession(app);

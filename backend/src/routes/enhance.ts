@@ -38,6 +38,7 @@ import {
   getEnhancementJob,
 } from "../jobs/job-store.js";
 import { getCustomerProcessorLabel } from "../processors/customer-label.js";
+import { isAllowedHost, isAllowedOrigin } from "../security/request-trust.js";
 import { logError, logEvent } from "../utils/log.js";
 import { signValue } from "../utils/signing.js";
 
@@ -101,6 +102,45 @@ function buildAcceptedJobResponse(jobId: string): AcceptedEnhancementJob {
   };
 }
 
+function rejectStateChangingRequestBoundary(c: Context<AppEnv>, config: AppConfig): Response | null {
+  const origin = c.req.header("origin") ?? null;
+  const host = c.req.header("host") ?? null;
+
+  if (!isAllowedHost(host, config.allowedHosts)) {
+    logEvent("warn", "request.host_rejected", {
+      requestId: c.get("requestId"),
+      host,
+      allowedHosts: config.allowedHosts,
+      clientIp: c.get("clientIp"),
+      method: c.req.method,
+      path: new URL(c.req.url).pathname,
+    });
+
+    return c.json(
+      { error: { kind: "processing", message: "Request host is not allowed." } },
+      403,
+    );
+  }
+
+  if (origin && !isAllowedOrigin(origin, config.allowedOrigins)) {
+    logEvent("warn", "request.origin_rejected", {
+      requestId: c.get("requestId"),
+      origin,
+      allowedOrigins: config.allowedOrigins,
+      clientIp: c.get("clientIp"),
+      method: c.req.method,
+      path: new URL(c.req.url).pathname,
+    });
+
+    return c.json(
+      { error: { kind: "processing", message: "Request origin is not allowed." } },
+      403,
+    );
+  }
+
+  return null;
+}
+
 export function createEnhanceRouter(config: AppConfig) {
   const router = new Hono<AppEnv>();
 
@@ -116,6 +156,12 @@ export function createEnhanceRouter(config: AppConfig) {
     );
 
     if (!rateLimit) {
+      logEvent("warn", "rate_limit.rejected", {
+        requestId,
+        clientIp,
+        route: "session-bootstrap",
+        ipLimited: true,
+      });
       return c.json(
         { error: { kind: "processing", message: "Too many session requests. Try again shortly." } },
         429,
@@ -262,6 +308,11 @@ export function createEnhanceRouter(config: AppConfig) {
     const requestId = c.get("requestId");
     const clientIp = c.get("clientIp");
     const session = c.get("session");
+    const boundaryRejection = rejectStateChangingRequestBoundary(c, config);
+
+    if (boundaryRejection) {
+      return boundaryRejection;
+    }
 
     if (!session) {
       return c.json(
@@ -289,6 +340,14 @@ export function createEnhanceRouter(config: AppConfig) {
     );
 
     if (!ipRateLimit || !sessionRateLimit) {
+      logEvent("warn", "rate_limit.rejected", {
+        requestId,
+        clientIp,
+        sessionId: session.id,
+        route: "enhance",
+        ipLimited: !ipRateLimit,
+        sessionLimited: !sessionRateLimit,
+      });
       return c.json(
         { error: { kind: "processing", message: "Too many enhancement requests. Try again shortly." } },
         429,

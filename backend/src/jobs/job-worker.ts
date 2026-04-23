@@ -20,6 +20,9 @@ import { recordOrchestrationTelemetry, summarizeTelemetry } from "../telemetry/o
 
 let workerTimer: NodeJS.Timeout | null = null;
 let workerRunning = false;
+let workerShuttingDown = false;
+let activeRunPromise: Promise<boolean> | null = null;
+let activeJobId: string | null = null;
 
 const PROCESSING_FAILURE_MESSAGE =
   "We couldn't complete this enhancement. Try again or use a different product image.";
@@ -49,6 +52,10 @@ function toPublicJobError(): { kind: "processing"; message: string } {
 }
 
 async function processClaimedJob(config: AppConfig): Promise<boolean> {
+  if (workerShuttingDown) {
+    return false;
+  }
+
   const job = await claimNextQueuedJob();
 
   if (!job) {
@@ -56,6 +63,16 @@ async function processClaimedJob(config: AppConfig): Promise<boolean> {
   }
 
   workerRunning = true;
+  activeJobId = job.id;
+  const queueWaitMs = Math.max(0, Date.now() - Date.parse(job.createdAt));
+
+  logEvent("info", "job.claimed", {
+    requestId: job.requestId,
+    jobId: job.id,
+    sessionId: job.sessionId,
+    presetId: job.presetId,
+    queueWaitMs,
+  });
 
   try {
     const inputBytes = await readStoredObject(job.inputObjectKey);
@@ -133,6 +150,12 @@ async function processClaimedJob(config: AppConfig): Promise<boolean> {
       presetId: job.presetId,
       outputId: storedOutput.outputId,
       processorPath: orchestrated.metadata.finalPath,
+      queueWaitMs,
+      totalJobMs: Date.now() - Date.parse(job.createdAt),
+      retryCount: orchestrated.metadata.telemetry.retryCount,
+      replanCount: orchestrated.metadata.telemetry.replanCount,
+      fallbackCount: orchestrated.metadata.telemetry.fallbackCount,
+      verificationFailureCount: orchestrated.metadata.telemetry.verificationFailureCount,
     });
   } catch (error) {
     const failedJob = await getEnhancementJob({
@@ -168,24 +191,33 @@ async function processClaimedJob(config: AppConfig): Promise<boolean> {
       jobId: job.id,
       sessionId: job.sessionId,
       presetId: job.presetId,
+      queueWaitMs,
+      totalJobMs: Date.now() - Date.parse(job.createdAt),
     });
   } finally {
     workerRunning = false;
+    activeJobId = null;
   }
 
   return true;
 }
 
 export async function runJobWorkerOnce(config = getConfig()): Promise<boolean> {
-  if (workerRunning) {
+  if (workerRunning || workerShuttingDown) {
     return false;
   }
 
-  return processClaimedJob(config);
+  activeRunPromise = processClaimedJob(config);
+
+  try {
+    return await activeRunPromise;
+  } finally {
+    activeRunPromise = null;
+  }
 }
 
 export function kickJobWorker(config = getConfig()): void {
-  if (workerRunning) {
+  if (workerRunning || workerShuttingDown) {
     return;
   }
 
@@ -195,11 +227,16 @@ export function kickJobWorker(config = getConfig()): void {
 }
 
 export async function prepareJobWorkerForStartup(): Promise<void> {
-  await requeueRunningJobs();
+  const requeuedJobs = await requeueRunningJobs();
+  if (requeuedJobs > 0) {
+    logEvent("warn", "job.requeued_on_startup", {
+      requeuedJobs,
+    });
+  }
 }
 
 export function startJobWorkerLoop(config = getConfig()): void {
-  if (workerTimer) {
+  if (workerTimer || workerShuttingDown) {
     return;
   }
 
@@ -217,4 +254,60 @@ export function stopJobWorkerLoop(): void {
 
   clearInterval(workerTimer);
   workerTimer = null;
+}
+
+export async function shutdownJobWorker(args: {
+  drainTimeoutMs: number;
+}): Promise<{ drained: boolean; activeJobId: string | null }> {
+  workerShuttingDown = true;
+  stopJobWorkerLoop();
+
+  logEvent("info", "job_worker.shutdown_started", {
+    activeJobId,
+    workerRunning,
+    drainTimeoutMs: args.drainTimeoutMs,
+  });
+
+  if (!activeRunPromise) {
+    logEvent("info", "job_worker.shutdown_completed", {
+      activeJobId: null,
+      drained: true,
+    });
+    return { drained: true, activeJobId: null };
+  }
+
+  const timedOut = await Promise.race([
+    activeRunPromise.then(() => false),
+    new Promise<boolean>((resolve) => {
+      const timeout = setTimeout(() => resolve(true), args.drainTimeoutMs);
+      timeout.unref?.();
+    }),
+  ]);
+
+  if (timedOut) {
+    const releasedJobs = await requeueRunningJobs();
+    logEvent("warn", "job_worker.shutdown_timed_out", {
+      activeJobId,
+      releasedJobs,
+    });
+    return { drained: false, activeJobId };
+  }
+
+  logEvent("info", "job_worker.shutdown_completed", {
+    activeJobId: null,
+    drained: true,
+  });
+  return { drained: true, activeJobId: null };
+}
+
+export function resetJobWorkerForTests(): void {
+  stopJobWorkerLoop();
+  workerRunning = false;
+  workerShuttingDown = false;
+  activeRunPromise = null;
+  activeJobId = null;
+}
+
+export function resumeJobWorkerClaims(): void {
+  workerShuttingDown = false;
 }

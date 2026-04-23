@@ -40,6 +40,8 @@ function buildConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
     port: 3001,
     allowedOrigins: ["http://localhost:5173"],
+    allowedHosts: ["localhost:3001", "127.0.0.1:3001"],
+    trustedProxyRanges: [],
     processor: "sharp",
     processorFailurePolicy: "strict",
     databasePath: "backend/data/test-runtime.sqlite",
@@ -54,6 +56,7 @@ function buildConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     sessionLockTtlMs: 120_000,
     jobPollIntervalMs: 250,
     jobRetentionSeconds: 86_400,
+    shutdownDrainTimeoutMs: 1_000,
     falAllowedHostSuffixes: ["fal.media"],
     openRouterApiKey: null,
     openRouterBaseUrl: "https://openrouter.ai/api/v1",

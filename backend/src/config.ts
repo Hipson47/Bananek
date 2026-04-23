@@ -1,3 +1,6 @@
+import { ensureLocalDevSecret } from "./runtime-paths.js";
+import { parseTrustedProxyRules } from "./security/request-trust.js";
+
 /**
  * Load a required environment variable. Throws at startup if the variable is
  * missing or blank so misconfigurations surface immediately instead of causing
@@ -35,6 +38,8 @@ function optionalNumberEnv(name: string, defaultValue: number): number {
 export type AppConfig = {
   port: number;
   allowedOrigins: string[];
+  allowedHosts: string[];
+  trustedProxyRanges: string[];
   processor: "sharp" | "mock" | "fal";
   processorFailurePolicy: "strict" | "fallback-to-sharp";
   databasePath: string;
@@ -49,6 +54,7 @@ export type AppConfig = {
   sessionLockTtlMs: number;
   jobPollIntervalMs: number;
   jobRetentionSeconds: number;
+  shutdownDrainTimeoutMs: number;
   falAllowedHostSuffixes: string[];
   openRouterApiKey: string | null;
   openRouterBaseUrl: string;
@@ -61,6 +67,39 @@ export type AppConfig = {
   openRouterModelPromptBuilder: string;
   openRouterModelVerification: string;
 };
+
+function isProductionLikeEnvironment(): boolean {
+  const nodeEnv = process.env.NODE_ENV?.trim().toLowerCase();
+  const appEnv = process.env.APP_ENV?.trim().toLowerCase();
+
+  return nodeEnv === "production"
+    || appEnv === "production"
+    || appEnv === "staging";
+}
+
+function validateSessionSecret(secret: string): string {
+  const trimmed = secret.trim();
+  const lowered = trimmed.toLowerCase();
+  const uniqueCharacters = new Set(trimmed).size;
+
+  if (trimmed.length < 32) {
+    throw new Error("APP_SESSION_SECRET must be at least 32 characters long.");
+  }
+
+  if (
+    lowered.includes("change-me")
+    || lowered.includes("example")
+    || lowered === "test-secret"
+  ) {
+    throw new Error("APP_SESSION_SECRET uses a placeholder value. Set a real secret.");
+  }
+
+  if (uniqueCharacters < 10) {
+    throw new Error("APP_SESSION_SECRET is too weak. Use a high-entropy secret.");
+  }
+
+  return trimmed;
+}
 
 export function readConfig(): AppConfig {
   const rawPort = parseInt(optionalEnv("PORT", "3001"), 10);
@@ -86,15 +125,33 @@ export function readConfig(): AppConfig {
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+  const rawAllowedHosts = optionalEnv("ALLOWED_HOSTS", "localhost:3001,127.0.0.1:3001")
+    .split(",")
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean);
+  const rawTrustedProxyRanges = optionalEnv("TRUSTED_PROXY_RANGES", "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  parseTrustedProxyRules(rawTrustedProxyRanges);
 
   const rawSessionSecret = process.env.APP_SESSION_SECRET?.trim();
+  const allowGeneratedDevSecret = process.env.ALLOW_GENERATED_DEV_SESSION_SECRET?.trim().toLowerCase() === "true";
 
-  if (process.env.NODE_ENV === "production" && !rawSessionSecret) {
+  if (isProductionLikeEnvironment() && !rawSessionSecret) {
     throw new Error("Missing required environment variable: APP_SESSION_SECRET");
   }
 
-  const sessionSecret = rawSessionSecret
-    || ensureLocalDevSecret(optionalEnv("LOCAL_DEV_SESSION_SECRET_PATH", "backend/data/dev-session-secret.txt"));
+  if (!rawSessionSecret && process.env.NODE_ENV !== "test" && !allowGeneratedDevSecret) {
+    throw new Error(
+      "Missing APP_SESSION_SECRET. Set it explicitly or enable ALLOW_GENERATED_DEV_SESSION_SECRET=true for local development only.",
+    );
+  }
+
+  const sessionSecret = validateSessionSecret(
+    rawSessionSecret
+      || ensureLocalDevSecret(optionalEnv("LOCAL_DEV_SESSION_SECRET_PATH", "backend/data/dev-session-secret.txt")),
+  );
 
   const rawFalAllowedHostSuffixes = optionalEnv("FAL_ALLOWED_HOST_SUFFIXES", "fal.media")
     .split(",")
@@ -106,6 +163,8 @@ export function readConfig(): AppConfig {
   return {
     port: rawPort,
     allowedOrigins: rawAllowedOrigins,
+    allowedHosts: rawAllowedHosts,
+    trustedProxyRanges: rawTrustedProxyRanges,
     processor: rawProcessor as "sharp" | "mock" | "fal",
     processorFailurePolicy: rawProcessorFailurePolicy as "strict" | "fallback-to-sharp",
     databasePath: optionalEnv("DATABASE_PATH", "backend/data/app.sqlite"),
@@ -120,6 +179,7 @@ export function readConfig(): AppConfig {
     sessionLockTtlMs: optionalNumberEnv("SESSION_LOCK_TTL_MS", 120_000),
     jobPollIntervalMs: optionalNumberEnv("JOB_POLL_INTERVAL_MS", 250),
     jobRetentionSeconds: optionalNumberEnv("JOB_RETENTION_SECONDS", 86_400),
+    shutdownDrainTimeoutMs: optionalNumberEnv("SHUTDOWN_DRAIN_TIMEOUT_MS", 30_000),
     falAllowedHostSuffixes: rawFalAllowedHostSuffixes,
     openRouterApiKey: rawOpenRouterApiKey,
     openRouterBaseUrl: optionalEnv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
@@ -153,4 +213,3 @@ export function refreshConfigFromEnv(): AppConfig {
 // Export requireEnv / optionalEnv so processors and routes can use the same
 // pattern when they need their own env vars.
 export { requireEnv, optionalEnv };
-import { ensureLocalDevSecret } from "./runtime-paths.js";
