@@ -1,101 +1,164 @@
 # Current System — Verified Against Code
 
-> Last verified: 2026-04-22. Every claim below corresponds to code that exists in the repository.
+> Last verified: 2026-04-23.
 
 ## What This Is
 
-A local-first MVP for AI product photo enhancement, targeting e-commerce sellers. The product accepts an image and a preset, processes it server-side, and returns an enhanced version via a signed download URL.
+A local-first automation-first product photo enhancer for e-commerce sellers. The customer product flow remains preset-based and single-image:
+
+1. upload
+2. choose preset
+3. process
+4. compare
+5. download
 
 ## Runtime Architecture
 
 ```
-Browser (Vite + React 18 + TypeScript)
-  └─ BackendProcessor → POST /api/enhance (multipart)
-       │
-Hono server (Node.js + TypeScript, port 3001)
-  ├─ Middleware: CORS, body limit (20MB), request ID, session resolution
-  ├─ GET  /api/session          → create/refresh signed session
-  ├─ POST /api/enhance          → orchestrated enhancement
-  ├─ GET  /api/outputs/:id      → serve processed image (signed URL)
-  └─ GET  /api/health           → liveness check
-       │
-  Orchestration: analyze → candidate-graph plan → execute → verify/replan
-       │
-  OpenRouter planning graph for `PROCESSOR=fal`:
-    ├─ intent normalization (strict JSON)
-    ├─ shot planning (3-4 structured candidates)
-    ├─ consistency normalization
-    ├─ candidate scoring + plan selection
-    ├─ rich prompt package generation
-    └─ verification node
-       │
-  Processors (selected at app startup via PROCESSOR env var):
-    ├─ sharp (default): deterministic libvips transforms
-    ├─ fal: image execution via FAL.ai (background-removal, FLUX Kontext)
-    └─ mock: pass-through for testing
-       │
-  Storage: SQLite (better-sqlite3, WAL mode)
-    ├─ sessions (credits, expiry)
-    ├─ usage_events (credit reserve/consume/refund audit trail)
-    ├─ outputs (image BLOBs + signed URLs)
-    ├─ rate_limits (per-IP and per-session sliding windows)
-    └─ session_processing_locks (single-flight guard per session)
+Browser (Vite + React)
+  └─ GET /api/session
+  └─ POST /api/enhance
+       ├─ sharp/mock: synchronous result
+       └─ fal: 202 queued job
+            └─ GET /api/jobs/:jobId
+                 └─ GET /api/outputs/:outputId
+
+Backend (Node + Hono)
+  ├─ signed session cookie + X-Session-Id boundary
+  ├─ multipart / JSON upload validation
+  ├─ SQLite-backed credits, rate limits, jobs, telemetry, consistency profiles
+  ├─ object-store abstraction for binary inputs/outputs
+  ├─ async worker for FAL-heavy jobs
+  └─ structured logging with request/job correlation
+
+Orchestration
+  └─ analyze -> plan -> execute -> verify
+       ├─ OpenRouter: planning only, strict JSON nodes
+       ├─ FAL: only image-generation backend
+       ├─ sharp: deterministic execution and fallback path
+       └─ authoritative final verification
 ```
+
+## Active Routes
+
+- `GET /api/health`
+- `GET /api/session`
+- `POST /api/enhance`
+- `GET /api/jobs/:jobId`
+- `GET /api/outputs/:outputId`
+
+## Storage Model
+
+### SQLite
+
+Persists:
+
+- sessions
+- usage events
+- rate-limit buckets
+- single-flight processing locks
+- enhancement jobs
+- consistency profiles
+- job node metrics
+- output metadata
+
+### Filesystem-backed object storage
+
+Stores:
+
+- uploaded job input binaries
+- processed output binaries
+
+The abstraction is intentionally local today and shaped so cloud object storage can replace it later without changing routes.
 
 ## Enhancement Flow
 
-1. **Session bootstrap**: browser calls `GET /api/session`, receives signed cookie + session ID + credit count.
-2. **Upload**: browser sends multipart form (image + presetId) to `POST /api/enhance` with `X-Session-Id` header.
-3. **Validation**: server checks rate limits (IP + session), acquires processing lock, validates image (sharp metadata inspection: format, dimensions, pixel count, animated frames, MIME match).
-4. **Credit reservation**: atomic SQLite transaction reserves 1 credit before processing begins.
-5. **Orchestration**:
-   - `analyze`: extract image facts (brightness, contrast, sharpness, background character, framing, marketplace readyScore) via sharp + 16x16 thumbnail.
-   - `intent normalize`: OpenRouter converts preset + image facts (+ optional goal) into a strict JSON `intent_spec`.
-   - `shot plan`: OpenRouter generates 3-4 bounded structured creative candidates.
-   - `candidate graph`: deterministic planner scores 3-5 execution plans using blur, contrast, border, background, centering, readiness, and artifact-risk signals.
-   - `consistency normalize`: OpenRouter selects or merges one final brief. Optional internal consistency hints can influence sequential runs when supplied by backend callers; the customer frontend does not send them today.
-   - `prompt package`: OpenRouter generates structured prompt ingredients; final package includes `masterPrompt`, `negativePrompt`, consistency/composition/brand-safety rules, and an optional `recoveryPrompt`.
-   - `execute`: FAL runs as the sole image-generation backend on the AI path, possibly across multiple ordered steps inside the chosen candidate plan. Planned follow-up steps are tracked separately from retries.
-   - `verify`: heuristic scoring plus a structured verification node may trigger one retry or replan to the next-best candidate. If the final verification still fails, the request fails cleanly instead of returning success.
-6. **Persistence**: output stored as BLOB in SQLite; signed URL generated with configurable TTL.
-7. **Response**: `ProcessedImageResult` with `processedUrl` pointing to `/api/outputs/:outputId?expires=...&sig=...`.
-8. **Error path**: on failure, credit is refunded via atomic transaction; processing lock is always released.
-9. **Maintenance**: expired outputs, locks, and limiter buckets are cleaned at startup and on a background interval, not inline on user requests.
+### Sharp / mock path
 
-## Presets
+1. validate session, rate limits, and file bytes
+2. reserve credit transactionally
+3. run orchestration inline
+4. store output metadata + bytes
+5. return final `ProcessedImageResult`
 
-| Preset ID | Sharp transforms | FAL model |
-|---|---|---|
-| `clean-background` | 1200px, flatten→white, brighten, desaturate, sharpen | `fal-ai/background-removal` |
-| `marketplace-ready` | 1000px square, flatten→white, saturate, contrast, sharpen | `fal-ai/flux-pro/kontext` |
-| `studio-polish` | 1500px, darken slightly, saturate, fine sharpen | `fal-ai/flux-pro/kontext` |
+### FAL path
 
-## Key Files
+1. validate session, rate limits, and file bytes
+2. reserve credit transactionally
+3. persist input bytes
+4. create durable job row in SQLite
+5. return `202` with `jobId` and `statusUrl`
+6. worker claims job and runs orchestration
+7. on success:
+   - persist consistency profile
+   - persist output metadata + bytes
+   - persist node telemetry
+   - mark job `succeeded`
+8. on failure:
+   - refund credit
+   - mark job `failed`
+9. frontend polls `GET /api/jobs/:jobId` until it receives either a final result or a controlled failure
 
-| Area | Files |
-|---|---|
-| Entry point | `backend/src/index.ts` (createApp + serve) |
-| Routes | `backend/src/routes/enhance.ts` |
-| Config | `backend/src/config.ts` |
-| Orchestration | `backend/src/orchestration/*.ts` (analysis, candidate planner, OpenRouter client, intent/shot/consistency/prompt/verification nodes, consistency-memory, enhancement-orchestrator, types) |
-| Processors | `backend/src/processors/{sharp,fal,mock}-processor.ts`, `contracts.ts` |
-| Storage | `backend/src/storage/{database,session-store,output-store,runtime-maintenance}.ts` |
-| Security | `backend/src/security/{rate-limiter,session-locks}.ts`, `backend/src/utils/signing.ts` |
-| Validation | `backend/src/image-validation.ts` |
-| Frontend | `src/App.tsx`, `src/features/enhancer/processors/backendProcessor.ts`, `src/features/enhancer/processors/backendSession.ts` |
+## Orchestration Behavior
 
-## Test Coverage
+- `analyze`: derives structured image facts with `sharp`
+- `plan`: builds and scores candidate plans
+- `execute`: runs the chosen processor path
+- `verify`: scores output and may allow one bounded retry/replan path
+- final verification is authoritative; failed outputs do not return success
 
-- 79 backend tests plus frontend/root integration tests in the current verify flow
-- Backend: route integration tests (SQLite test DB, mocked OpenRouter and FAL), sharp processor tests (real transforms), FAL processor tests (HTTP mocking), OpenRouter client tests, orchestration graph tests, validation tests
-- Frontend: BackendProcessor fetch mocking, file validation
+OpenRouter is used only for structured planning nodes. FAL is used only for image generation. The customer UI never sees prompts, provider names, or model names.
 
-## What Does NOT Exist
+## Consistency Capability
 
-- Payments or purchased credits (credits are stubbed at session creation)
-- Cloud object storage (images stored as SQLite BLOBs)
-- Async job queue (all processing is synchronous in the request cycle)
-- Deployment configuration (no Dockerfile, no reverse proxy, no TLS)
-- User accounts or authentication (sessions are anonymous, cookie-based)
-- Admin or playground mode (customer-mode only)
-- Persisted catalog/batch consistency memory as a first-class product feature
+Consistency memory is now real but internal-only:
+
+- persisted per `session + preset` scope in SQLite
+- reused across related async jobs by the worker
+- not currently exposed as a batch/catalog feature in the customer UI
+
+## Telemetry
+
+Structured logs include:
+
+- `requestId`
+- `jobId`
+- processor path
+- retry/replan/fallback counts
+- verification outcome
+
+SQLite telemetry rows store:
+
+- node name
+- latency
+- outcome
+- attempts
+- source/model metadata when applicable
+
+## Tests
+
+Current verified counts:
+
+- root tests: `91`
+- backend tests: `81`
+- Playwright E2E: `2`
+
+Covered areas include:
+
+- route integration
+- async job lifecycle
+- credit atomicity
+- object storage cleanup
+- consistency profile persistence
+- OpenRouter client behavior
+- FAL execution safety
+- frontend backend-adapter polling
+- browser upload -> process -> download flow
+
+## What Does Not Exist
+
+- real customer auth/accounts
+- real payments/purchased credits
+- cloud object storage
+- distributed workers/queue infra
+- external metrics/tracing/alerts

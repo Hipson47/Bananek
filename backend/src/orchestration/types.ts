@@ -1,5 +1,6 @@
 import type { AppConfig } from "../config.js";
 import type { ProcessorPromptContext, EnhancementProcessor, EnhancementProcessorMap } from "../processors/contracts.js";
+import type { OrchestrationNodeMetric } from "../telemetry/orchestration-telemetry.js";
 import type { PresetId, ProcessedImageResult } from "../types.js";
 
 export type { EnhancementProcessor } from "../processors/contracts.js";
@@ -200,6 +201,14 @@ export type OrchestrationMetadata = {
   verification: VerificationResult;
   fallbackApplied: boolean;
   retryApplied: boolean;
+  telemetry: {
+    nodeMetrics: OrchestrationNodeMetric[];
+    retryCount: number;
+    replanCount: number;
+    fallbackCount: number;
+    verificationFailureCount: number;
+    finalOutcomeClass: string;
+  };
 };
 
 export type OrchestratedEnhancement = {

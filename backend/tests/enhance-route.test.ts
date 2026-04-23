@@ -2,8 +2,12 @@ import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { createApp } from "../src/index.js";
+import { runJobWorkerOnce } from "../src/jobs/job-worker.js";
+import { getEnhancementJob } from "../src/jobs/job-store.js";
 import { clearRateLimits } from "../src/security/rate-limiter.js";
-import { closeDatabase, resetDatabaseForTests } from "../src/storage/database.js";
+import { closeDatabase, getDatabase, resetDatabaseForTests } from "../src/storage/database.js";
+import { getConsistencyProfile } from "../src/storage/consistency-profile-store.js";
+import { hasStoredObject } from "../src/storage/object-store.js";
 import { cleanupExpiredRuntimeState } from "../src/storage/runtime-maintenance.js";
 import { getSession } from "../src/storage/session-store.js";
 
@@ -62,6 +66,70 @@ async function postMultipart(
     },
     body: formData,
   });
+}
+
+async function expectQueuedJob(
+  app: ReturnType<typeof createApp>,
+  init: {
+    cookie: string;
+    sessionId: string;
+    presetId?: string;
+    file?: File;
+  },
+) {
+  const res = await postMultipart(app, init);
+  const body = await res.json();
+
+  expect(res.status).toBe(202);
+  expect(body).toEqual({
+    jobId: expect.any(String),
+    status: "queued",
+    statusUrl: expect.stringMatching(/^\/api\/jobs\/[0-9a-f-]+$/i),
+  });
+
+  return body as {
+    jobId: string;
+    status: "queued";
+    statusUrl: string;
+  };
+}
+
+async function fetchJobStatus(app: ReturnType<typeof createApp>, init: {
+  cookie: string;
+  statusUrl: string;
+}) {
+  const res = await app.request(init.statusUrl, {
+    method: "GET",
+    headers: {
+      Cookie: init.cookie,
+    },
+  });
+
+  return {
+    res,
+    body: await res.json(),
+  };
+}
+
+async function runQueuedJobAndFetchStatus(
+  app: ReturnType<typeof createApp>,
+  init: {
+    cookie: string;
+    statusUrl: string;
+  },
+) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    await runJobWorkerOnce();
+    const result = await fetchJobStatus(app, init);
+
+    if (result.body.status !== "queued" && result.body.status !== "running") {
+      return result;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  return fetchJobStatus(app, init);
 }
 
 beforeAll(() => {
@@ -321,12 +389,19 @@ describe("POST /api/enhance", () => {
 
     const app = createApp();
     const { cookie, sessionId } = await bootstrapSession(app);
-    const res = await postMultipart(app, { cookie, sessionId });
+    const acceptedJob = await expectQueuedJob(app, { cookie, sessionId });
+    const { res, body } = await runQueuedJobAndFetchStatus(app, {
+      cookie,
+      statusUrl: acceptedJob.statusUrl,
+    });
 
     expect(res.status).toBe(200);
+    expect(body.filename).toBe("product-clean-background.png");
+    expect(body.mimeType).toBe("image/png");
+    expect(body.processedUrl).toMatch(/^\/api\/outputs\/.+\?expires=\d+&sig=/);
   });
 
-  it("returns a customer-safe 500 when fal fails under strict policy", async () => {
+  it("returns a failed async job and refunds credits when fal fails under strict policy", async () => {
     process.env.PROCESSOR = "fal";
     process.env.PROCESSOR_FAILURE_POLICY = "strict";
     process.env.FAL_API_KEY = "test-key";
@@ -334,10 +409,14 @@ describe("POST /api/enhance", () => {
 
     const app = createApp();
     const { cookie, sessionId } = await bootstrapSession(app);
-    const res = await postMultipart(app, { cookie, sessionId });
-    const body = await res.json();
+    const acceptedJob = await expectQueuedJob(app, { cookie, sessionId });
+    const { res, body } = await runQueuedJobAndFetchStatus(app, {
+      cookie,
+      statusUrl: acceptedJob.statusUrl,
+    });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("failed");
     expect(body.error.kind).toBe("processing");
     expect(body.error.message).toBe(
       "We couldn't complete this enhancement. Try again or use a different product image.",
@@ -525,15 +604,19 @@ describe("POST /api/enhance", () => {
 
     const app = createApp();
     const { cookie, sessionId } = await bootstrapSession(app);
-    const res = await postMultipart(app, {
+    const acceptedJob = await expectQueuedJob(app, {
       cookie,
       sessionId,
       presetId: "marketplace-ready",
       file: createPngFile(),
     });
-    const body = await res.json();
+    const { res, body } = await runQueuedJobAndFetchStatus(app, {
+      cookie,
+      statusUrl: acceptedJob.statusUrl,
+    });
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(200);
+    expect(body.status).toBe("failed");
     expect(body.error.kind).toBe("processing");
     expect(body.error.message).toBe(
       "We couldn't complete this enhancement. Try again or use a different product image.",
@@ -688,13 +771,16 @@ describe("POST /api/enhance", () => {
 
     const app = createApp();
     const { cookie, sessionId } = await bootstrapSession(app);
-    const res = await postMultipart(app, {
+    const acceptedJob = await expectQueuedJob(app, {
       cookie,
       sessionId,
       presetId: "marketplace-ready",
       file: createPngFile(),
     });
-    const body = await res.json();
+    const { res, body } = await runQueuedJobAndFetchStatus(app, {
+      cookie,
+      statusUrl: acceptedJob.statusUrl,
+    });
 
     expect(res.status).toBe(200);
     expect(body.filename).toBe("product-marketplace-ready.png");
@@ -702,5 +788,236 @@ describe("POST /api/enhance", () => {
     expect(body.processedUrl).toMatch(/^\/api\/outputs\/.+\?expires=\d+&sig=/);
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("openrouter.ai"))).toBe(true);
     expect(fetchMock.mock.calls.some((call) => String(call[0]).includes("fal.run"))).toBe(true);
+  });
+
+  it("persists async job records, consistency memory, and node telemetry for FAL jobs", async () => {
+    process.env.PROCESSOR = "fal";
+    process.env.PROCESSOR_FAILURE_POLICY = "strict";
+    process.env.FAL_API_KEY = "test-fal-key";
+    process.env.OPENROUTER_API_KEY = "test-openrouter-key";
+    const marketplaceOutputBuffer = await sharp({
+      create: {
+        width: 1000,
+        height: 1000,
+        channels: 3,
+        background: { r: 252, g: 252, b: 252 },
+      },
+    }).png().toBuffer();
+
+    vi.stubGlobal("fetch", vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const requestUrl = String(url);
+
+      if (requestUrl === "https://openrouter.ai/api/v1/chat/completions") {
+        const body = JSON.parse(String(init?.body));
+        const schemaName = body.response_format?.json_schema?.name;
+
+        const bySchema: Record<string, unknown> = {
+          intent_spec: {
+            presetId: "marketplace-ready",
+            customerGoal: null,
+            primaryObjective: "deliver a marketplace-ready listing image",
+            backgroundGoal: "pure-white",
+            framingGoal: "square-centered",
+            lightingGoal: "catalog-clean",
+            detailGoal: "catalog-clarity",
+            realismGuard: "strict",
+            emphasis: ["square framing", "white background"],
+          },
+          shot_plan_candidates: {
+            candidates: [
+              {
+                candidateId: "option-a",
+                title: "Balanced listing",
+                framing: "square-centered",
+                background: "pure-white",
+                lighting: "catalog-clean",
+                crop: "balanced",
+                rationale: "best fit",
+                fitScore: 0.95,
+                riskFlags: [],
+              },
+              {
+                candidateId: "option-b",
+                title: "Tighter crop",
+                framing: "tight-product",
+                background: "pure-white",
+                lighting: "catalog-clean",
+                crop: "tight",
+                rationale: "secondary",
+                fitScore: 0.75,
+                riskFlags: [],
+              },
+              {
+                candidateId: "option-c",
+                title: "Safer crop",
+                framing: "balanced-centered",
+                background: "clean-white",
+                lighting: "neutral-lift",
+                crop: "balanced",
+                rationale: "fallback",
+                fitScore: 0.65,
+                riskFlags: [],
+              },
+            ],
+          },
+          consistency_spec: {
+            selectionMode: "selected",
+            selectedCandidateIds: ["option-a"],
+            finalFraming: "square-centered",
+            finalBackground: "pure-white",
+            finalLighting: "catalog-clean",
+            finalCrop: "balanced",
+            keepConstraints: ["preserve product geometry", "preserve visible branding"],
+            avoidConstraints: ["no extra props", "no color shift"],
+            rationale: "Select the most commerce-ready candidate.",
+          },
+          prompt_package: {
+            masterPrompt: "Create a marketplace-ready product image on a pure white background with centered framing.",
+            negativePrompt: "extra props, color shift, distorted geometry",
+            consistencyRules: ["keep pure white background", "keep catalog lighting"],
+            compositionRules: ["center the product in a square crop", "preserve balanced margins"],
+            brandSafetyRules: ["do not alter the product identity", "do not add extra objects"],
+            recoveryPrompt: "retry with stronger white background cleanup and square centering",
+            subjectClause: "Preserve the real product exactly.",
+            sceneClause: "Use a pure white background with square centered framing.",
+            lightingClause: "Apply clean catalog lighting.",
+            detailClause: "Keep sharp detail and realistic materials.",
+            constraintClauses: ["preserve product geometry", "preserve visible branding"],
+            negativeClauses: ["no extra props", "no color shift"],
+            executionNotes: ["preset:marketplace-ready", "variant:primary"],
+            guidanceScale: 3.8,
+          },
+          verification_decision: {
+            decision: "accept",
+            confidence: 0.92,
+            reasons: [],
+            promptAdjustments: [],
+            guidanceScaleAdjustment: 0,
+          },
+        };
+
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            model: "openai/gpt-4.1-mini",
+            choices: [{ message: { content: JSON.stringify(bySchema[schemaName]) } }],
+          }),
+        };
+      }
+
+      if (requestUrl.startsWith("https://fal.run/")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            images: [{ url: "https://fal.media/test/result", content_type: "image/jpeg" }],
+          }),
+        };
+      }
+
+      if (requestUrl === "https://fal.media/test/result") {
+        return {
+          ok: true,
+          status: 200,
+          headers: {
+            get: (name: string) => name.toLowerCase() === "content-length"
+              ? String(marketplaceOutputBuffer.byteLength)
+              : null,
+          },
+          arrayBuffer: async () => {
+            const buffer = marketplaceOutputBuffer;
+            return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+          },
+        };
+      }
+
+      throw new Error(`Unexpected fetch URL: ${requestUrl}`);
+    }));
+
+    const app = createApp();
+    const { cookie, sessionId } = await bootstrapSession(app);
+    const acceptedJob = await expectQueuedJob(app, {
+      cookie,
+      sessionId,
+      presetId: "marketplace-ready",
+      file: createPngFile(),
+    });
+    const { body } = await runQueuedJobAndFetchStatus(app, {
+      cookie,
+      statusUrl: acceptedJob.statusUrl,
+    });
+
+    const job = await getEnhancementJob({
+      sessionId,
+      jobId: acceptedJob.jobId,
+    });
+    const consistency = await getConsistencyProfile(`session:${sessionId}:preset:marketplace-ready`);
+    const metricRows = getDatabase().prepare(`
+      SELECT node_name
+      FROM job_node_metrics
+      WHERE job_id = ?
+      ORDER BY id ASC
+    `).all(acceptedJob.jobId) as Array<{ node_name: string }>;
+
+    expect(body.processedUrl).toMatch(/^\/api\/outputs\/.+\?expires=\d+&sig=/);
+    expect(job?.status).toBe("succeeded");
+    expect(job?.telemetrySummary).toMatchObject({
+      finalOutcomeClass: "succeeded",
+    });
+    expect(job?.processorPath?.length).toBeGreaterThan(0);
+    expect(consistency?.memory.backgroundStyle).toBeTruthy();
+    expect(metricRows.map((row) => row.node_name)).toEqual(expect.arrayContaining([
+      "analyze",
+      "execute",
+      "verify",
+    ]));
+  });
+
+  it("stores async outputs in object storage and deletes expired files during cleanup", async () => {
+    process.env.PROCESSOR = "fal";
+    process.env.PROCESSOR_FAILURE_POLICY = "fallback-to-sharp";
+    delete process.env.FAL_API_KEY;
+    process.env.OUTPUT_URL_TTL_SECONDS = "1";
+    const nowSpy = vi.spyOn(Date, "now");
+    nowSpy.mockReturnValue(1_700_000_000_000);
+
+    const app = createApp();
+    const { cookie, sessionId } = await bootstrapSession(app);
+    const acceptedJob = await expectQueuedJob(app, {
+      cookie,
+      sessionId,
+      presetId: "clean-background",
+    });
+    const { body } = await runQueuedJobAndFetchStatus(app, {
+      cookie,
+      statusUrl: acceptedJob.statusUrl,
+    });
+
+    const job = await getEnhancementJob({
+      sessionId,
+      jobId: acceptedJob.jobId,
+    });
+    const outputRecord = job?.outputId
+      ? await getDatabase().prepare(`
+        SELECT storage_key
+        FROM outputs
+        WHERE id = ?
+      `).get(job.outputId) as { storage_key: string } | undefined
+      : undefined;
+
+    expect(outputRecord?.storage_key).toBeTruthy();
+    expect(await hasStoredObject(outputRecord!.storage_key)).toBe(true);
+
+    nowSpy.mockReturnValue(1_700_000_000_000 + 2_000);
+    await cleanupExpiredRuntimeState(Date.now());
+
+    expect(await hasStoredObject(outputRecord!.storage_key)).toBe(false);
+
+    const outputRes = await app.request(body.processedUrl, {
+      method: "GET",
+      headers: { Cookie: cookie },
+    });
+    expect(outputRes.status).toBe(404);
   });
 });

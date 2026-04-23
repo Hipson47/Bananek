@@ -14,6 +14,7 @@ import { runPromptBuilderNode } from "./prompt-builder-node.js";
 import { runShotPlannerNode } from "./shot-planner-node.js";
 import { verifyEnhancementOutput } from "./verification.js";
 import { runVerificationNode } from "./verification-node.js";
+import { summarizeTelemetry, timeNode } from "../telemetry/orchestration-telemetry.js";
 import type {
   CandidatePlan,
   ConsistencyMemory,
@@ -209,28 +210,43 @@ async function executeFalWithGraph(args: {
   userGoal?: string | null;
   consistencyMemory?: ConsistencyMemory | null;
 }): Promise<OrchestratedEnhancement> {
-  const analysis = await analyzeImage(args.imageBuffer, args.originalMimeType);
+  const nodeMetrics: import("../telemetry/orchestration-telemetry.js").OrchestrationNodeMetric[] = [];
+  let replanCount = 0;
+  let verificationFailureCount = 0;
+  const analysis = await timeNode(nodeMetrics, {
+    nodeName: "analyze",
+    run: () => analyzeImage(args.imageBuffer, args.originalMimeType),
+  });
   const consistencyMemoryBefore = args.consistencyMemory ?? null;
   const failedAttempts: FailedAttemptSummary[] = [];
   const attemptedCandidateIds: string[] = [];
   let consistencyMemoryAfter: ConsistencyMemory | null = consistencyMemoryBefore;
 
-  const intent = await runIntentNode({
-    presetId: args.presetId,
-    analysis,
-    config: args.config,
-    requestId: args.requestId,
-    userGoal: args.userGoal,
+  const intent = await timeNode(nodeMetrics, {
+    nodeName: "intent-node",
+    run: () => runIntentNode({
+      presetId: args.presetId,
+      analysis,
+      config: args.config,
+      requestId: args.requestId,
+      userGoal: args.userGoal,
+    }),
   });
-  const shotPlan = await runShotPlannerNode({
-    intent: intent.data,
-    analysis,
-    config: args.config,
+  const shotPlan = await timeNode(nodeMetrics, {
+    nodeName: "shot-planner-node",
+    run: () => runShotPlannerNode({
+      intent: intent.data,
+      analysis,
+      config: args.config,
+    }),
   });
-  const consistency = await runConsistencyNode({
-    intent: intent.data,
-    candidates: shotPlan.data,
-    config: args.config,
+  const consistency = await timeNode(nodeMetrics, {
+    nodeName: "consistency-node",
+    run: () => runConsistencyNode({
+      intent: intent.data,
+      candidates: shotPlan.data,
+      config: args.config,
+    }),
   });
 
   let activePlan = buildEnhancementPlan({
@@ -246,17 +262,21 @@ async function executeFalWithGraph(args: {
   let retryApplied = false;
 
   const buildPromptPackageForPlan = async (plan: EnhancementPlan, variant: "primary" | "retry", retryAdjustments?: string[]) => (
-    runPromptBuilderNode({
-      presetId: args.presetId,
-      analysis,
-      intent: intent.data,
-      consistency: consistency.data,
-      selectedPlan: chooseCandidateFromPlan(plan),
-      consistencyMemory: consistencyMemoryBefore,
-      failedAttempts,
-      config: args.config,
-      variant,
-      retryAdjustments,
+    timeNode(nodeMetrics, {
+      nodeName: "prompt-builder-node",
+      detail: `${variant}:${plan.selectedCandidateId ?? plan.strategy}`,
+      run: () => runPromptBuilderNode({
+        presetId: args.presetId,
+        analysis,
+        intent: intent.data,
+        consistency: consistency.data,
+        selectedPlan: chooseCandidateFromPlan(plan),
+        consistencyMemory: consistencyMemoryBefore,
+        failedAttempts,
+        config: args.config,
+        variant,
+        retryAdjustments,
+      }),
     })
   );
 
@@ -268,24 +288,33 @@ async function executeFalWithGraph(args: {
       promptPackage: promptPackage.data,
       stage: "primary",
     });
-    let execution = await executePlan({
-      plan: planForExecution,
-      imageBuffer: args.imageBuffer,
-      originalMimeType: args.originalMimeType,
-      presetId: args.presetId,
-      requestId: args.requestId,
-      processors: args.processors,
+    let execution = await timeNode(nodeMetrics, {
+      nodeName: "execute",
+      detail: activePlan.selectedCandidateId ?? activePlan.strategy,
+      run: () => executePlan({
+        plan: planForExecution,
+        imageBuffer: args.imageBuffer,
+        originalMimeType: args.originalMimeType,
+        presetId: args.presetId,
+        requestId: args.requestId,
+        processors: args.processors,
+      }),
     });
-    let verificationState = await verifyExecution({
-      presetId: args.presetId,
-      inputAnalysis: analysis,
-      output: execution.result,
-      promptPackage: promptPackage.data,
-      config: args.config,
-      plan: activePlan,
+    let verificationState = await timeNode(nodeMetrics, {
+      nodeName: "verify",
+      detail: activePlan.selectedCandidateId ?? activePlan.strategy,
+      run: () => verifyExecution({
+        presetId: args.presetId,
+        inputAnalysis: analysis,
+        output: execution.result,
+        promptPackage: promptPackage.data,
+        config: args.config,
+        plan: activePlan,
+      }),
     });
 
     if (!verificationState.heuristicVerification.passed) {
+      verificationFailureCount += 1;
       failedAttempts.push(summarizeFailedAttempt({
         plan: activePlan,
         verification: verificationState.heuristicVerification,
@@ -305,6 +334,7 @@ async function executeFalWithGraph(args: {
           throw buildQualityVerificationError();
         }
         retryApplied = true;
+        replanCount += 1;
         activePlan = buildEnhancementPlan({
           presetId: args.presetId,
           originalMimeType: args.originalMimeType,
@@ -327,21 +357,29 @@ async function executeFalWithGraph(args: {
           promptPackage: promptPackage.data,
           stage: "retry",
         });
-        execution = await executePlan({
-          plan: planForExecution,
-          imageBuffer: args.imageBuffer,
-          originalMimeType: args.originalMimeType,
-          presetId: args.presetId,
-          requestId: args.requestId,
-          processors: args.processors,
+        execution = await timeNode(nodeMetrics, {
+          nodeName: "execute",
+          detail: `replan:${activePlan.selectedCandidateId ?? activePlan.strategy}`,
+          run: () => executePlan({
+            plan: planForExecution,
+            imageBuffer: args.imageBuffer,
+            originalMimeType: args.originalMimeType,
+            presetId: args.presetId,
+            requestId: args.requestId,
+            processors: args.processors,
+          }),
         });
-        verificationState = await verifyExecution({
-          presetId: args.presetId,
-          inputAnalysis: analysis,
-          output: execution.result,
-          promptPackage: promptPackage.data,
-          config: args.config,
-          plan: activePlan,
+        verificationState = await timeNode(nodeMetrics, {
+          nodeName: "verify",
+          detail: `replan:${activePlan.selectedCandidateId ?? activePlan.strategy}`,
+          run: () => verifyExecution({
+            presetId: args.presetId,
+            inputAnalysis: analysis,
+            output: execution.result,
+            promptPackage: promptPackage.data,
+            config: args.config,
+            plan: activePlan,
+          }),
         });
       } else if (
         verificationState.verificationNode?.data.decision === "retry"
@@ -373,21 +411,29 @@ async function executeFalWithGraph(args: {
           promptPackage: promptPackage.data,
           stage: "retry",
         });
-        execution = await executePlan({
-          plan: planForExecution,
-          imageBuffer: args.imageBuffer,
-          originalMimeType: args.originalMimeType,
-          presetId: args.presetId,
-          requestId: args.requestId,
-          processors: args.processors,
+        execution = await timeNode(nodeMetrics, {
+          nodeName: "execute",
+          detail: `retry:${activePlan.selectedCandidateId ?? activePlan.strategy}`,
+          run: () => executePlan({
+            plan: planForExecution,
+            imageBuffer: args.imageBuffer,
+            originalMimeType: args.originalMimeType,
+            presetId: args.presetId,
+            requestId: args.requestId,
+            processors: args.processors,
+          }),
         });
-        verificationState = await verifyExecution({
-          presetId: args.presetId,
-          inputAnalysis: analysis,
-          output: execution.result,
-          promptPackage: promptPackage.data,
-          config: args.config,
-          plan: activePlan,
+        verificationState = await timeNode(nodeMetrics, {
+          nodeName: "verify",
+          detail: `retry:${activePlan.selectedCandidateId ?? activePlan.strategy}`,
+          run: () => verifyExecution({
+            presetId: args.presetId,
+            inputAnalysis: analysis,
+            output: execution.result,
+            promptPackage: promptPackage.data,
+            config: args.config,
+            plan: activePlan,
+          }),
         });
       }
     }
@@ -410,20 +456,28 @@ async function executeFalWithGraph(args: {
         });
         attemptedCandidateIds.push(activePlan.selectedCandidateId ?? activePlan.strategy);
         attemptedStrategies.push(activePlan.selectedCandidateId ?? activePlan.strategy);
-        execution = await executePlan({
-          plan: activePlan,
-          imageBuffer: args.imageBuffer,
-          originalMimeType: args.originalMimeType,
-          presetId: args.presetId,
-          requestId: args.requestId,
-          processors: args.processors,
+        execution = await timeNode(nodeMetrics, {
+          nodeName: "execute",
+          detail: "fallback:sharp-only",
+          run: () => executePlan({
+            plan: activePlan,
+            imageBuffer: args.imageBuffer,
+            originalMimeType: args.originalMimeType,
+            presetId: args.presetId,
+            requestId: args.requestId,
+            processors: args.processors,
+          }),
         });
         verificationState = {
-          heuristicVerification: await verifyEnhancementOutput({
-            presetId: args.presetId,
-            inputAnalysis: analysis,
-            output: execution.result,
-            plan: activePlan,
+          heuristicVerification: await timeNode(nodeMetrics, {
+            nodeName: "verify",
+            detail: "fallback:sharp-only",
+            run: () => verifyEnhancementOutput({
+              presetId: args.presetId,
+              inputAnalysis: analysis,
+              output: execution.result,
+              plan: activePlan,
+            }),
           }),
           verificationNode: null,
         };
@@ -499,6 +553,13 @@ async function executeFalWithGraph(args: {
       retryApplied,
       fallbackApplied,
       failedAttempts,
+      telemetry: summarizeTelemetry({
+        nodeMetrics,
+        retryCount: retryApplied ? 1 : 0,
+        replanCount,
+        fallbackCount: fallbackApplied ? 1 : 0,
+        verificationFailureCount,
+      }),
       verificationResult: {
         status: verificationState.heuristicVerification.status,
         score: verificationState.heuristicVerification.score,
@@ -528,6 +589,14 @@ async function executeFalWithGraph(args: {
         verification: verificationState.heuristicVerification,
         fallbackApplied,
         retryApplied,
+        telemetry: {
+          nodeMetrics,
+          retryCount: retryApplied ? 1 : 0,
+          replanCount,
+          fallbackCount: fallbackApplied ? 1 : 0,
+          verificationFailureCount,
+          finalOutcomeClass: "succeeded",
+        },
       },
     };
   } catch (error) {
@@ -550,19 +619,27 @@ async function executeFalWithGraph(args: {
       requestId: args.requestId,
       presetId: args.presetId,
     });
-    const execution = await executePlan({
-      plan: sharpPlan,
-      imageBuffer: args.imageBuffer,
-      originalMimeType: args.originalMimeType,
-      presetId: args.presetId,
-      requestId: args.requestId,
-      processors: args.processors,
+    const execution = await timeNode(nodeMetrics, {
+      nodeName: "execute",
+      detail: "graph-failure-fallback:sharp-only",
+      run: () => executePlan({
+        plan: sharpPlan,
+        imageBuffer: args.imageBuffer,
+        originalMimeType: args.originalMimeType,
+        presetId: args.presetId,
+        requestId: args.requestId,
+        processors: args.processors,
+      }),
     });
-    const verification = await verifyEnhancementOutput({
-      presetId: args.presetId,
-      inputAnalysis: analysis,
-      output: execution.result,
-      plan: sharpPlan,
+    const verification = await timeNode(nodeMetrics, {
+      nodeName: "verify",
+      detail: "graph-failure-fallback:sharp-only",
+      run: () => verifyEnhancementOutput({
+        presetId: args.presetId,
+        inputAnalysis: analysis,
+        output: execution.result,
+        plan: sharpPlan,
+      }),
     });
 
     if (!verification.passed) {
@@ -588,6 +665,14 @@ async function executeFalWithGraph(args: {
         verification,
         fallbackApplied,
         retryApplied,
+        telemetry: {
+          nodeMetrics,
+          retryCount: retryApplied ? 1 : 0,
+          replanCount,
+          fallbackCount: fallbackApplied ? 1 : 0,
+          verificationFailureCount,
+          finalOutcomeClass: "succeeded",
+        },
       },
     };
   }
@@ -610,7 +695,12 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
     });
   }
 
-  const analysis = await analyzeImage(input.imageBuffer, input.originalMimeType);
+  const nodeMetrics: import("../telemetry/orchestration-telemetry.js").OrchestrationNodeMetric[] = [];
+  let verificationFailureCount = 0;
+  const analysis = await timeNode(nodeMetrics, {
+    nodeName: "analyze",
+    run: () => analyzeImage(input.imageBuffer, input.originalMimeType),
+  });
   const initialPlan = buildEnhancementPlan({
     presetId: input.presetId,
     originalMimeType: input.originalMimeType,
@@ -622,16 +712,20 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
   let activePlan = initialPlan;
   let fallbackApplied = false;
   let retryApplied = false;
-  let execution;
+  let execution: Awaited<ReturnType<typeof executePlan>>;
 
   try {
-    execution = await executePlan({
-      plan: activePlan,
-      imageBuffer: input.imageBuffer,
-      originalMimeType: input.originalMimeType,
-      presetId: input.presetId,
-      requestId: input.requestId,
-      processors,
+    execution = await timeNode(nodeMetrics, {
+      nodeName: "execute",
+      detail: activePlan.selectedCandidateId ?? activePlan.strategy,
+      run: () => executePlan({
+        plan: activePlan,
+        imageBuffer: input.imageBuffer,
+        originalMimeType: input.originalMimeType,
+        presetId: input.presetId,
+        requestId: input.requestId,
+        processors,
+      }),
     });
   } catch (error) {
     if (!activePlan.fallbackStrategy) {
@@ -654,21 +748,29 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
       presetId: input.presetId,
       fallbackStrategy: activePlan.strategy,
     });
-    execution = await executePlan({
-      plan: activePlan,
-      imageBuffer: input.imageBuffer,
-      originalMimeType: input.originalMimeType,
-      presetId: input.presetId,
-      requestId: input.requestId,
-      processors,
+    execution = await timeNode(nodeMetrics, {
+      nodeName: "execute",
+      detail: `fallback:${activePlan.selectedCandidateId ?? activePlan.strategy}`,
+      run: () => executePlan({
+        plan: activePlan,
+        imageBuffer: input.imageBuffer,
+        originalMimeType: input.originalMimeType,
+        presetId: input.presetId,
+        requestId: input.requestId,
+        processors,
+      }),
     });
   }
 
-  let verification = await verifyEnhancementOutput({
-    presetId: input.presetId,
-    inputAnalysis: analysis,
-    output: execution.result,
-    plan: activePlan,
+  let verification = await timeNode(nodeMetrics, {
+    nodeName: "verify",
+    detail: activePlan.selectedCandidateId ?? activePlan.strategy,
+    run: () => verifyEnhancementOutput({
+      presetId: input.presetId,
+      inputAnalysis: analysis,
+      output: execution.result,
+      plan: activePlan,
+    }),
   });
 
   const safeRecommendedStrategy = verification.recommendedStrategy?.includes("ai")
@@ -676,6 +778,7 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
       : verification.recommendedStrategy;
 
   if (!verification.accepted && verification.status === "retry" && safeRecommendedStrategy) {
+    verificationFailureCount += 1;
     const needsFallback =
       activePlan.fallbackStrategy === safeRecommendedStrategy ||
       safeRecommendedStrategy === "sharp-only";
@@ -694,19 +797,27 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
         consistencyMemory: input.consistencyMemory,
       });
       attemptedStrategies.push(activePlan.selectedCandidateId ?? activePlan.strategy);
-      execution = await executePlan({
-        plan: activePlan,
-        imageBuffer: input.imageBuffer,
-        originalMimeType: input.originalMimeType,
-        presetId: input.presetId,
-        requestId: input.requestId,
-        processors,
+      execution = await timeNode(nodeMetrics, {
+        nodeName: "execute",
+        detail: `retry:${activePlan.selectedCandidateId ?? activePlan.strategy}`,
+        run: () => executePlan({
+          plan: activePlan,
+          imageBuffer: input.imageBuffer,
+          originalMimeType: input.originalMimeType,
+          presetId: input.presetId,
+          requestId: input.requestId,
+          processors,
+        }),
       });
-      verification = await verifyEnhancementOutput({
-        presetId: input.presetId,
-        inputAnalysis: analysis,
-        output: execution.result,
-        plan: activePlan,
+      verification = await timeNode(nodeMetrics, {
+        nodeName: "verify",
+        detail: `retry:${activePlan.selectedCandidateId ?? activePlan.strategy}`,
+        run: () => verifyEnhancementOutput({
+          presetId: input.presetId,
+          inputAnalysis: analysis,
+          output: execution.result,
+          plan: activePlan,
+        }),
       });
     }
   }
@@ -732,6 +843,13 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
     attemptedStrategies,
     fallbackApplied,
     retryApplied,
+    telemetry: summarizeTelemetry({
+      nodeMetrics,
+      retryCount: retryApplied ? 1 : 0,
+      replanCount: 0,
+      fallbackCount: fallbackApplied ? 1 : 0,
+      verificationFailureCount,
+    }),
     verificationStatus: verification.status,
     verificationScore: verification.score,
     verificationReasons: verification.reasons,
@@ -756,6 +874,14 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
       verification,
       fallbackApplied,
       retryApplied,
+      telemetry: {
+        nodeMetrics,
+        retryCount: retryApplied ? 1 : 0,
+        replanCount: 0,
+        fallbackCount: fallbackApplied ? 1 : 0,
+        verificationFailureCount,
+        finalOutcomeClass: "succeeded",
+      },
     },
   };
 }

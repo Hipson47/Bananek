@@ -8,15 +8,17 @@
     "build": "tsc --project tsconfig.app.json && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "bash ./scripts/ensure-playwright-linux-libs.sh && LD_LIBRARY_PATH=.playwright-libs/root/usr/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH} playwright test",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "security:audit": "npm audit --omit=dev && npm --prefix backend audit --omit=dev",
-    "verify": "npm run typecheck && npm test && npm run build && npm --prefix backend run verify && npm run security:audit"
+    "verify": "npm run typecheck && npm test && npm run build && npm --prefix backend run verify && npm run test:e2e && npm run security:audit"
   },
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react-swc": "^3.7.0",

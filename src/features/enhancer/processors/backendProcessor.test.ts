@@ -104,6 +104,86 @@ describe("BackendProcessor", () => {
     ).rejects.toThrow("Unknown or missing preset.");
   });
 
+  it("polls accepted jobs until the backend returns the final processed asset", async () => {
+    const result: ProcessedImageResult = {
+      filename: "product-clean-background.png",
+      mimeType: "image/png",
+      processedUrl: "/api/outputs/output-123?expires=999&sig=signed",
+      processorLabel: "Clean Background enhancement",
+    };
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        createResponse({
+          sessionId: "session-123",
+          creditsRemaining: 3,
+          creditsUsed: 0,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createResponse({
+          jobId: "job-123",
+          status: "queued",
+          statusUrl: "/api/jobs/job-123",
+        }, {
+          status: 202,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Credits-Remaining": "2",
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        createResponse({
+          jobId: "job-123",
+          status: "running",
+        }),
+      )
+      .mockResolvedValueOnce(
+        createResponse(result),
+      );
+
+    const processed = await processor.processImage({
+      file: createImageFile(),
+      preset,
+    });
+
+    expect(processed).toEqual(result);
+  });
+
+  it("surfaces failed async jobs as stable backend processing errors", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        createResponse({
+          sessionId: "session-123",
+          creditsRemaining: 3,
+          creditsUsed: 0,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createResponse({
+          jobId: "job-123",
+          status: "queued",
+          statusUrl: "/api/jobs/job-123",
+        }, {
+          status: 202,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createResponse({
+          jobId: "job-123",
+          status: "failed",
+          error: {
+            kind: "processing",
+            message: "We couldn't complete this enhancement. Try again.",
+          },
+        }),
+      );
+
+    await expect(
+      processor.processImage({ file: createImageFile(), preset }),
+    ).rejects.toThrow("We couldn't complete this enhancement. Try again.");
+  });
+
   it("rejects malformed backend responses", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
@@ -133,5 +213,34 @@ describe("BackendProcessor", () => {
     await expect(
       processor.processImage({ file: createImageFile(), preset }),
     ).rejects.toThrow(/Could not (start|reach)/);
+  });
+
+  it("rejects malformed async job polling responses", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        createResponse({
+          sessionId: "session-123",
+          creditsRemaining: 3,
+          creditsUsed: 0,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createResponse({
+          jobId: "job-123",
+          status: "queued",
+          statusUrl: "/api/jobs/job-123",
+        }, {
+          status: 202,
+        }),
+      )
+      .mockResolvedValueOnce(
+        createResponse({
+          unexpected: true,
+        }),
+      );
+
+    await expect(
+      processor.processImage({ file: createImageFile(), preset }),
+    ).rejects.toThrow("Enhancement service returned an invalid response.");
   });
 });

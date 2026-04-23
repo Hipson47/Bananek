@@ -14,6 +14,7 @@ import { createEnhanceRouter } from "./routes/enhance.js";
 import { getSession } from "./storage/session-store.js";
 import { configureDatabase } from "./storage/database.js";
 import { cleanupExpiredRuntimeState, startRuntimeMaintenanceLoop } from "./storage/runtime-maintenance.js";
+import { prepareJobWorkerForStartup, startJobWorkerLoop } from "./jobs/job-worker.js";
 import { logError, logEvent } from "./utils/log.js";
 import { unsignValue } from "./utils/signing.js";
 
@@ -30,7 +31,6 @@ export function createApp(explicitConfig?: AppConfig) {
   const config = explicitConfig ?? refreshConfigFromEnv();
   setActiveConfig(config);
   configureDatabase(config.databasePath);
-  void cleanupExpiredRuntimeState();
   const app = new Hono<AppEnv>();
 
   app.use(
@@ -101,6 +101,13 @@ if (entryFilePath === currentFilePath) {
   const config = refreshConfigFromEnv();
   setActiveConfig(config);
   configureDatabase(config.databasePath);
+  void cleanupExpiredRuntimeState().catch((error) => {
+    logError("runtime_maintenance.startup_failed", error, {});
+  });
+  void prepareJobWorkerForStartup().catch((error) => {
+    logError("job_worker.startup_prepare_failed", error, {});
+  });
+  startJobWorkerLoop(config);
   startRuntimeMaintenanceLoop();
   serve({ fetch: app.fetch, port: config.port }, (info) => {
     logEvent("info", "server.started", {

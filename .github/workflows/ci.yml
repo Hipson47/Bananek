@@ -24,5 +24,8 @@ jobs:
       - name: Install backend dependencies
         run: npm --prefix backend ci
 
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
       - name: Verify repo
         run: npm run verify

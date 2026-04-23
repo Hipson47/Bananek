@@ -1,108 +1,85 @@
 # Architecture Overview
 
-## Document Status
+## Current State
 
-- `Current State`: verified architecture that exists in the filesystem now
-- `Near-Term Target`: the next implementation step after Phase 1 hardening
-- `Historical`: older playground-oriented architecture notes are reference only
+- `src/` is the active customer-facing app
+- `backend/` is the active API + orchestration runtime
+- `/api/enhance` remains the public product entrypoint
+- `PROCESSOR=fal` is now async and job-backed
+- `PROCESSOR=sharp` and `PROCESSOR=mock` remain synchronous
 
-## Current Architecture
+## Boundary Summary
 
-### Verified Facts
+### Frontend owns
 
-- `src/` contains the active customer-facing React app
-- `backend/` contains the active Hono API
-- the active enhancement request path is:
-  - `src/App.tsx`
-  - `GET /api/session`
-  - `src/features/enhancer/processors/backendProcessor.ts`
-  - `POST /api/enhance`
-  - `backend/src/orchestration/enhancement-orchestrator.ts`
-  - `backend/src/processors/*` execution path (`sharp`, `fal`, or `mock`)
-  - `GET /api/outputs/:outputId`
-- the frontend no longer uses browser-side mock processing as the active path
-- local development uses a Vite proxy from `/api` to the backend
-
-## Current Architecture Summary
-
-- the frontend owns upload, preset selection, progress UI, and result rendering
-- the backend owns signed session issuance, request validation, abuse controls, automation orchestration, SQLite-backed runtime state, output persistence, and delivery
-- the default processor policy is deterministic-first; when `PROCESSOR=fal`, OpenRouter performs planning-only orchestration and FAL remains the only image-generation backend
-- orchestration now uses a scored candidate-plan graph instead of a single heuristic strategy switch
-- final verification is authoritative; failed outputs do not return success after the allowed retry/replan path
-- validated config is frozen at app startup and passed down into routes, DB, processors, and orchestration
-- provider details remain hidden from customer-facing UI and response messaging
-
-## Key Systems And Boundaries
-
-### Frontend
-
-Owns:
 - upload UI
 - preset selection
-- request initiation
-- status, error, and result rendering
+- progress / error / result rendering
+- polling the backend job status through `BackendProcessor`
 
-Must not own:
-- provider keys
-- hidden prompts
-- provider routing
-- server-side processing logic
+### Backend owns
 
-### Backend
-
-Owns:
+- signed session issuance
 - request validation
-- session bootstrap and signed session cookies
-- usage tracking / credit decrement stub
-- SQLite-backed rate limiting and single-flight enhancement guard
-- processing boundary for `/api/enhance`
-- orchestration graph stages: analyze, intent normalize, shot plan, candidate scoring, consistency normalize, prompt package, execute, verify/replan
-- response contract returned to the UI
-- persisted output delivery under `/api/outputs/:outputId`
-- SQLite persistence for sessions, outputs, rate-limit buckets, and processing locks
-- background runtime maintenance outside the request path
-- internal consistency hints for future sequential catalog-style callers
-- future real-processing integration point
+- abuse controls
+- credit reservation / refund
+- orchestration
+- async job execution for AI-heavy work
+- output persistence and delivery
+- consistency profile persistence
+- telemetry
 
-Does not yet own:
-- auth
-- billing
-- queueing
-- durable multi-instance delivery
+### Frontend does not own
 
-## Current Processing Flow
+- prompts
+- provider routing
+- provider keys
+- job execution logic
+- storage semantics
 
-1. Customer uploads one image.
-2. Customer selects one predefined preset.
-3. Frontend sends a multipart request to `POST /api/enhance`.
-4. Backend validates the session, abuse limits, and uploaded image bytes.
-5. Backend analyzes the image to derive structured format, framing, brightness, contrast, and marketplace-readiness signals.
-6. If `PROCESSOR=fal`, backend runs a planning graph:
-   - OpenRouter intent normalization
-   - OpenRouter shot planning
-   - deterministic candidate scoring and plan selection
-   - OpenRouter consistency normalization
-   - OpenRouter prompt package generation
-7. Backend materializes a deterministic internal prompt package with recovery rules and executes the chosen multi-step plan.
-8. Backend verifies the output with heuristic scoring plus a structured verification node, and may retry once or replan to the next-best candidate before falling back if policy allows.
-9. If `PROCESSOR=sharp` or `mock`, backend stays on the deterministic processor seam without OpenRouter planning.
-10. Backend persists the output and runtime metadata in SQLite, then returns a signed `/api/outputs/:outputId` URL.
-11. Frontend renders the stored result.
+## Public Contract
 
-## Near-Term Target
+`POST /api/enhance` is still the stable public entrypoint.
 
-The existing frontend/backend seam is stable. The next milestone is not provider integration itself, but productisation around the current path:
+Behavior by processor:
 
-1. keep `POST /api/enhance` as the stable customer-facing contract (already stable)
-2. choose the production default between deterministic-only and OpenRouter-planned FAL execution
-3. replace single-node SQLite blob persistence with cloud object storage
-4. add payments / credit purchase and async jobs for AI-heavy processing
+- `sharp` / `mock`: returns final `ProcessedImageResult`
+- `fal`: returns `202` accepted job envelope and the frontend polls until the backend returns either:
+  - final `ProcessedImageResult`
+  - controlled failure payload
 
-## Architecture Decision Constraints
+The user-facing flow stays the same because polling is hidden inside `BackendProcessor`.
 
-- incremental evolution over rewrite
-- preserve the backend boundary already introduced in Phase 1
-- no provider keys in the browser
-- no customer prompts in the default product flow
-- keep customer flow preset-based: upload -> preset -> process -> result
+## Orchestration Contract
+
+The active backend path is:
+
+1. analyze
+2. plan
+3. execute
+4. verify
+
+Additional details:
+
+- OpenRouter is planning-only and schema-constrained
+- FAL is the only image-generation backend
+- sharp remains the deterministic fallback path
+- verification is authoritative
+- retries/replans are bounded and observable
+
+## Durability Model
+
+- SQLite is the source of truth for runtime metadata
+- filesystem object storage is the source of truth for binary payloads
+- cleanup runs on startup and on an interval, not on user requests
+- AI work survives process restart through durable job rows
+
+## Remaining Near-Term Target
+
+The next architecture step is not “more orchestration.” It is operational launch work:
+
+1. real auth/accounts
+2. payments and purchased credits
+3. cloud object storage swap behind the existing storage abstraction
+4. external observability
+5. graceful shutdown / worker drain behavior

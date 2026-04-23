@@ -1,34 +1,33 @@
-# Known Gaps — Code-Verified
+# Known Gaps — Code Verified
 
-> Every gap listed here has been verified against the actual codebase as of 2026-04-22.
+> Verified against the repo on 2026-04-23.
 
-## Security Gaps
+## Security
 
-| Gap | Location | Risk | Mitigation |
-|---|---|---|---|
-| Dev session secret fallback | `backend/src/config.ts` line ~75 | Session forgery in production if env var is unset | Require `APP_SESSION_SECRET` always; fail startup without it |
-| No HTTPS enforcement | `backend/src/routes/enhance.ts` cookie flags | Session cookie sent in cleartext on non-TLS connections | Deploy behind TLS-terminating reverse proxy |
-| No CSRF protection | `POST /api/enhance` | Cross-site request forgery possible via multipart form | Add CSRF token or validate Origin header |
-
-## Architecture Gaps
-
-| Gap | Impact | Notes |
+| Gap | Risk | Next action |
 |---|---|---|
-| SQLite BLOB storage for outputs | DB grows unboundedly; no CDN; single-node only | Replace with S3/R2 before multi-instance |
-| Synchronous AI processing | 5–30s request hold for FAL.ai presets | Add async queue for AI-heavy traffic |
-| No horizontal scaling path | Single-process SQLite locks, single-node BLOBs | Need external DB + storage before second instance |
-| No graceful shutdown | In-flight requests dropped on SIGTERM | Add drain logic to `index.ts` serve function |
+| Anonymous session model only | No real user/account ownership | Add auth/accounts before paid launch |
+| No CSRF protection beyond same-site cookie posture | Cross-site abuse risk on authenticated browsers | Add Origin validation and CSRF strategy |
+| No TLS enforcement in repo | Cookies unsafe without proper deployment | Terminate TLS in front of the app |
 
-## Code Quality Gaps
+## Architecture
 
-| Gap | Location | Action |
+| Gap | Risk | Next action |
 |---|---|---|
-| DEC-010 references dead architecture | `docs/04-decisions/decision-log.md` | DEC-010 talks about 50MB body limit for data URLs; actual limit is 20MB for multipart. Consider superseding. |
-| Redirect audit folder still exists | `docs/06-audits/latest-code-review*.md` | Keep as redirect stubs only; active audit files live under `docs/audits/` |
+| Filesystem object storage is still single-node | No multi-instance delivery path | Swap storage adapter to S3/R2 |
+| SQLite + in-process worker is still single-node | No horizontal job scaling | Introduce external queue / worker topology |
+| No graceful shutdown drain logic | In-flight jobs/requests may be interrupted on deploy | Add shutdown handling to API + worker loop |
 
-## Testing Gaps
+## Operations
 
-| Gap | Impact | Notes |
+| Gap | Risk | Next action |
 |---|---|---|
-| No load/stress testing | Unknown behavior under concurrent load | Add k6 or artillery test suite before production |
-| No E2E browser tests | Frontend tested only at unit level (fetch mocking) | Add Playwright tests for full upload→result flow |
+| No external metrics/tracing/alerts | Hard to tune or triage production incidents | Export telemetry to a real observability stack |
+| No deployment config in repo | Launch path remains manual | Add deployment/runtime manifests |
+
+## Product Readiness
+
+| Gap | Risk | Next action |
+|---|---|---|
+| Credits are still a stub | No monetization path | Add purchased credits/payments |
+| No real auth/accounts | No persistent customer identity | Add account model before charging users |

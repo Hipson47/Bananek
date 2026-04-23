@@ -22,15 +22,33 @@ import {
   touchSession,
 } from "../storage/session-store.js";
 import {
+  buildStoredOutputUrl,
+  getStoredOutputById,
   readStoredOutput,
   resolveStoredOutput,
   storeOutput,
 } from "../storage/output-store.js";
+import {
+  buildDefaultConsistencyScope,
+} from "../storage/consistency-profile-store.js";
+import { deleteStoredObject } from "../storage/object-store.js";
+import { persistJobInput, kickJobWorker } from "../jobs/job-worker.js";
+import {
+  createEnhancementJob,
+  getEnhancementJob,
+} from "../jobs/job-store.js";
+import { getCustomerProcessorLabel } from "../processors/customer-label.js";
 import { logError, logEvent } from "../utils/log.js";
 import { signValue } from "../utils/signing.js";
 
 const PROCESSING_FAILURE_MESSAGE =
   "We couldn't complete this enhancement. Try again or use a different product image.";
+
+type AcceptedEnhancementJob = {
+  jobId: string;
+  status: "queued" | "running";
+  statusUrl: string;
+};
 
 function serialiseSession(session: {
   id: string;
@@ -75,6 +93,14 @@ function applyRateLimitHeaders(c: Context<AppEnv>, remaining: number, resetAt: n
   c.header("X-RateLimit-Reset", String(resetAt));
 }
 
+function buildAcceptedJobResponse(jobId: string): AcceptedEnhancementJob {
+  return {
+    jobId,
+    status: "queued",
+    statusUrl: `/api/jobs/${jobId}`,
+  };
+}
+
 export function createEnhanceRouter(config: AppConfig) {
   const router = new Hono<AppEnv>();
 
@@ -112,6 +138,85 @@ export function createEnhanceRouter(config: AppConfig) {
     c.header("Cache-Control", "no-store");
 
     return c.json(serialiseSession(session), 200);
+  });
+
+  router.get("/jobs/:jobId", async (c) => {
+    const session = c.get("session");
+
+    if (!session) {
+      return c.json(
+        { error: { kind: "processing", message: "Valid session required." } },
+        401,
+      );
+    }
+
+    const job = await getEnhancementJob({
+      sessionId: session.id,
+      jobId: c.req.param("jobId"),
+    });
+
+    if (!job) {
+      return c.notFound();
+    }
+
+    c.header("Cache-Control", "no-store");
+
+    if (job.status === "queued" || job.status === "running") {
+      return c.json({
+        jobId: job.id,
+        status: job.status,
+      }, 200);
+    }
+
+    if (job.status === "failed") {
+      return c.json({
+        jobId: job.id,
+        status: job.status,
+        error: {
+          kind: job.errorKind ?? "processing",
+          message: job.errorMessage ?? PROCESSING_FAILURE_MESSAGE,
+        },
+      }, 200);
+    }
+
+    if (!job.outputId) {
+      return c.json({
+        jobId: job.id,
+        status: "failed",
+        error: {
+          kind: "processing",
+          message: PROCESSING_FAILURE_MESSAGE,
+        },
+      }, 200);
+    }
+
+    const output = await getStoredOutputById({
+      outputId: job.outputId,
+      sessionId: session.id,
+    });
+
+    if (!output) {
+      return c.json({
+        jobId: job.id,
+        status: "failed",
+        error: {
+          kind: "processing",
+          message: PROCESSING_FAILURE_MESSAGE,
+        },
+      }, 200);
+    }
+
+    return c.json({
+      filename: output.filename,
+      mimeType: output.mimeType,
+      processedUrl: buildStoredOutputUrl({
+        outputId: output.id,
+        sessionId: session.id,
+        signingSecret: config.sessionSecret,
+        urlTtlSeconds: config.outputUrlTtlSeconds,
+      }),
+      processorLabel: getCustomerProcessorLabel(job.presetId),
+    }, 200);
   });
 
   router.get("/outputs/:outputId", async (c) => {
@@ -196,25 +301,10 @@ export function createEnhanceRouter(config: AppConfig) {
       Math.max(ipRateLimit.resetAt, sessionRateLimit.resetAt),
     );
 
-    const lockAcquired = acquireSessionProcessingLock(
-      session.id,
-      requestId,
-      config.sessionLockTtlMs,
-    );
-
-    if (!lockAcquired) {
-      return c.json(
-        { error: { kind: "processing", message: "Only one enhancement can run at a time per session." } },
-        409,
-      );
-    }
-
-    let reservedSessionId: string | null = null;
+    let parsedInput;
+    const contentType = c.req.header("content-type") ?? "";
 
     try {
-      let parsedInput;
-      const contentType = c.req.header("content-type") ?? "";
-
       if (contentType.includes("multipart/form-data")) {
         const formData = await c.req.formData();
         const parsed = await parseMultipartEnhanceBody(formData);
@@ -243,11 +333,117 @@ export function createEnhanceRouter(config: AppConfig) {
               userGoal: parsed.userGoal,
             });
       }
+    } catch (error) {
+      const response = toPublicErrorResponse(error);
+      return c.json(response.body, response.status);
+    }
 
-      if ("kind" in parsedInput) {
-        return c.json({ error: parsedInput }, 400);
+    if ("kind" in parsedInput) {
+      return c.json({ error: parsedInput }, 400);
+    }
+
+    if (config.processor === "fal") {
+      let reservedSessionId: string | null = null;
+      let inputObjectKey: string | null = null;
+
+      try {
+        const reservedSession = await reserveSessionCredit(
+          session.id,
+          requestId,
+          `preset:${parsedInput.presetId}`,
+        );
+
+        if (!reservedSession) {
+          return c.json(
+            { error: { kind: "processing", message: "No credits remaining for this session." } },
+            402,
+          );
+        }
+
+        reservedSessionId = reservedSession.id;
+        inputObjectKey = await persistJobInput({
+          filename: parsedInput.originalFilename,
+          bytes: parsedInput.imageBuffer,
+        });
+
+        const job = await createEnhancementJob({
+          sessionId: reservedSession.id,
+          presetId: parsedInput.presetId,
+          requestId,
+          inputObjectKey,
+          inputMimeType: parsedInput.mimeType,
+          inputFilename: parsedInput.originalFilename,
+          userGoal: parsedInput.userGoal,
+          consistencyScopeKey: buildDefaultConsistencyScope({
+            sessionId: reservedSession.id,
+            presetId: parsedInput.presetId,
+          }),
+        });
+
+        if (!job) {
+          if (inputObjectKey) {
+            await deleteStoredObject(inputObjectKey);
+          }
+          await refundSessionCredit(reservedSession.id, requestId, "job_rejected_active_job");
+          return c.json(
+            { error: { kind: "processing", message: "Only one enhancement can run at a time per session." } },
+            409,
+          );
+        }
+
+        c.header("X-Credits-Remaining", String(reservedSession.creditsRemaining));
+        c.header("Cache-Control", "no-store");
+
+        kickJobWorker(config);
+
+        logEvent("info", "enhance.job_queued", {
+          requestId,
+          jobId: job.id,
+          sessionId: reservedSession.id,
+          clientIp,
+          presetId: parsedInput.presetId,
+        });
+
+        return c.json(buildAcceptedJobResponse(job.id), 202);
+      } catch (err) {
+        if (inputObjectKey) {
+          await deleteStoredObject(inputObjectKey);
+        }
+        if (reservedSessionId) {
+          await refundSessionCredit(
+            reservedSessionId,
+            requestId,
+            "processing_failed",
+          );
+        }
+
+        logError("enhance.failed", err, {
+          requestId,
+          sessionId: session.id,
+          clientIp,
+        });
+
+        const response = toPublicErrorResponse(err);
+        return c.json(response.body, response.status);
       }
+    }
 
+    const lockAcquired = acquireSessionProcessingLock(
+      session.id,
+      requestId,
+      config.sessionLockTtlMs,
+    );
+
+    if (!lockAcquired) {
+      return c.json(
+        { error: { kind: "processing", message: "Only one enhancement can run at a time per session." } },
+        409,
+      );
+    }
+
+    let reservedSessionId: string | null = null;
+
+    try {
       const reservedSession = await reserveSessionCredit(
         session.id,
         requestId,
@@ -293,28 +489,14 @@ export function createEnhanceRouter(config: AppConfig) {
         mimeType: orchestrated.result.mimeType,
         creditsRemaining: reservedSession.creditsRemaining,
         orchestration: {
-          analysis: {
-            format: orchestrated.metadata.analysis.format,
-            dimensions: orchestrated.metadata.analysis.dimensions,
-            readyScore: orchestrated.metadata.analysis.marketplaceSignals.readyScore,
-            brightnessScore: orchestrated.metadata.analysis.quality.brightnessScore,
-          },
           strategy: orchestrated.metadata.plan.strategy,
           attemptedStrategies: orchestrated.metadata.attemptedStrategies,
           finalPath: orchestrated.metadata.finalPath,
-          graph: {
-            intentSource: orchestrated.metadata.intent?.source ?? null,
-            shotPlannerSource: orchestrated.metadata.shotPlan?.source ?? null,
-            consistencySource: orchestrated.metadata.consistency?.source ?? null,
-            promptBuilderSource: orchestrated.metadata.promptPackage?.source ?? null,
-            verificationSource: orchestrated.metadata.verificationNode?.source ?? null,
-          },
-          fallbackApplied: orchestrated.metadata.fallbackApplied,
-          retryApplied: orchestrated.metadata.retryApplied,
           verification: {
             status: orchestrated.metadata.verification.status,
             reasons: orchestrated.metadata.verification.reasons,
           },
+          telemetry: orchestrated.metadata.telemetry,
         },
       });
 

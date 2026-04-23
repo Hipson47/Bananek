@@ -38,6 +38,7 @@ export type AppConfig = {
   processor: "sharp" | "mock" | "fal";
   processorFailurePolicy: "strict" | "fallback-to-sharp";
   databasePath: string;
+  objectStoragePath: string;
   sessionSecret: string;
   sessionCookieName: string;
   defaultSessionCredits: number;
@@ -46,6 +47,8 @@ export type AppConfig = {
   sessionBootstrapRateLimitMax: number;
   outputUrlTtlSeconds: number;
   sessionLockTtlMs: number;
+  jobPollIntervalMs: number;
+  jobRetentionSeconds: number;
   falAllowedHostSuffixes: string[];
   openRouterApiKey: string | null;
   openRouterBaseUrl: string;
@@ -85,11 +88,13 @@ export function readConfig(): AppConfig {
     .filter(Boolean);
 
   const rawSessionSecret = process.env.APP_SESSION_SECRET?.trim();
-  const defaultSessionSecret = "dev-only-session-secret-change-me";
 
   if (process.env.NODE_ENV === "production" && !rawSessionSecret) {
     throw new Error("Missing required environment variable: APP_SESSION_SECRET");
   }
+
+  const sessionSecret = rawSessionSecret
+    || ensureLocalDevSecret(optionalEnv("LOCAL_DEV_SESSION_SECRET_PATH", "backend/data/dev-session-secret.txt"));
 
   const rawFalAllowedHostSuffixes = optionalEnv("FAL_ALLOWED_HOST_SUFFIXES", "fal.media")
     .split(",")
@@ -104,7 +109,8 @@ export function readConfig(): AppConfig {
     processor: rawProcessor as "sharp" | "mock" | "fal",
     processorFailurePolicy: rawProcessorFailurePolicy as "strict" | "fallback-to-sharp",
     databasePath: optionalEnv("DATABASE_PATH", "backend/data/app.sqlite"),
-    sessionSecret: rawSessionSecret || defaultSessionSecret,
+    objectStoragePath: optionalEnv("OBJECT_STORAGE_PATH", "backend/data/object-store"),
+    sessionSecret,
     sessionCookieName: optionalEnv("SESSION_COOKIE_NAME", "enhancer_session"),
     defaultSessionCredits: optionalNumberEnv("DEFAULT_SESSION_CREDITS", 3),
     rateLimitWindowMs: optionalNumberEnv("RATE_LIMIT_WINDOW_MS", 60_000),
@@ -112,6 +118,8 @@ export function readConfig(): AppConfig {
     sessionBootstrapRateLimitMax: optionalNumberEnv("SESSION_BOOTSTRAP_RATE_LIMIT_MAX", 30),
     outputUrlTtlSeconds: optionalNumberEnv("OUTPUT_URL_TTL_SECONDS", 3_600),
     sessionLockTtlMs: optionalNumberEnv("SESSION_LOCK_TTL_MS", 120_000),
+    jobPollIntervalMs: optionalNumberEnv("JOB_POLL_INTERVAL_MS", 250),
+    jobRetentionSeconds: optionalNumberEnv("JOB_RETENTION_SECONDS", 86_400),
     falAllowedHostSuffixes: rawFalAllowedHostSuffixes,
     openRouterApiKey: rawOpenRouterApiKey,
     openRouterBaseUrl: optionalEnv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
@@ -145,3 +153,4 @@ export function refreshConfigFromEnv(): AppConfig {
 // Export requireEnv / optionalEnv so processors and routes can use the same
 // pattern when they need their own env vars.
 export { requireEnv, optionalEnv };
+import { ensureLocalDevSecret } from "./runtime-paths.js";

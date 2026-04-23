@@ -1,6 +1,6 @@
 # Code Review Audit — 2026-04-22
 
-> Historical audit snapshot. Several findings below have since been addressed by the adaptive orchestration hardening pass on 2026-04-22. Use current code, tests, and `docs/03-progress/current-status.md` for present-state truth.
+> Historical audit snapshot from before the 2026-04-23 async-job and object-storage hardening pass. Use current code, tests, and `docs/03-progress/current-status.md` for present-state truth.
 
 Scope: current working tree, active runtime paths, tests, configs, env usage, docs vs implementation.
 

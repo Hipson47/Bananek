@@ -1,6 +1,6 @@
 # Code Review Summary — 2026-04-22
 
-> Historical audit snapshot. Some issues below were intentionally fixed in the 2026-04-22 hardening pass; treat this file as a decision input, not current-state truth.
+> Historical audit snapshot from before the 2026-04-23 async-job and object-storage hardening pass. Treat this file as decision history, not current-state truth.
 
 Current estimated score: **7.4/10**
 
