@@ -1,6 +1,6 @@
 # AI Context — Session Handoff File
 
-> Last updated: 2026-04-24.
+> Last updated: 2026-04-25.
 
 ## Repo Reality
 
@@ -63,16 +63,25 @@ Properties:
 
 ## Frontend Reality
 
+- `/` is the premium Framer Motion story-scroll landing page
+- `/app` and `/app/enhance` are the real product tool routes
+- `/` is frontend-only and must not bootstrap `/api/session`; session creation
+  starts when the user enters `/app` or `/app/enhance`
 - `BackendProcessor` hides async polling from the UI
 - browser still interacts only with presets and files
 - no prompt input
 - no provider choice
+- `/dawca` was a temporary donor design reference and has been removed; its
+  landing system was transplanted into product-owned code: 1200vh sticky
+  runway, donor timing windows, scroll progress transforms, lifecycle gating,
+  chapter mechanics, and namespaced donor-style CSS without copying portfolio
+  content
 
 ## Test / Verify Snapshot
 
 - root tests: `115`
 - backend tests: `105`
-- Playwright E2E: `2`
+- Playwright E2E: `7`
 - frontend build: passing
 - backend build: passing
 - `npm run verify`: passing

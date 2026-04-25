@@ -1,0 +1,45 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #171513;
+  background: #f5f0e8;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  --font-display: "Space Grotesk", Inter, "Plus Jakarta Sans", system-ui, sans-serif;
+  --color-ink: #171513;
+  --color-muted: #6e6a63;
+  --color-paper: #f5f0e8;
+  --color-paper-warm: #fffaf1;
+  --color-charcoal: #080807;
+  --color-charcoal-soft: #12110f;
+  --color-cream: #efe5d4;
+  --color-line: rgba(23, 21, 19, 0.12);
+  --color-line-inverse: rgba(255, 250, 241, 0.14);
+  --color-accent: #f05a28;
+  --color-accent-dark: #b93d18;
+  --color-success: #43665b;
+  --shadow-soft: 0 24px 80px rgba(23, 21, 19, 0.14);
+  --shadow-tight: 0 16px 36px rgba(23, 21, 19, 0.12);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 16px;
+  --z-base: 1;
+  --z-card: 5;
+  --z-contact: 6;
+  --z-process: 7;
+  --z-about: 8;
+  --z-hero: 10;
+  --z-work: 20;
+  --z-nav: 40;
+  --z-progress: 50;
+  --z-modal: 100;
+  --z-toast: 200;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 160ms;
+  --duration-base: 280ms;
+}

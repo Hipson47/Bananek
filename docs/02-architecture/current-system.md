@@ -1,6 +1,6 @@
 # Current System — Verified Against Code
 
-> Last verified: 2026-04-24.
+> Last verified: 2026-04-25.
 
 ## What This Is
 
@@ -12,11 +12,22 @@ A local-first automation-first product photo enhancer for e-commerce sellers. Th
 4. compare
 5. download
 
+The frontend now separates marketing/story UI from the functional tool:
+
+- `/` serves the premium Framer Motion story-scroll landing page.
+- `/app` and `/app/enhance` serve the real enhancement workspace.
+
+`/dawca` was a temporary donor reference used for the landing transplant. It has
+been removed; the active `src/` tree now owns the cinematic landing, shared
+motion utilities, app shell, and product tool styling.
+
 ## Runtime Architecture
 
 ```
 Browser (Vite + React)
-  └─ GET /api/session
+  ├─ / scroll-driven landing/story page (frontend-only)
+  ├─ /app and /app/enhance product tool shell
+  ├─ GET /api/session
   └─ POST /api/enhance
        ├─ sharp/mock: synchronous result
        └─ fal: 202 queued job
@@ -144,7 +155,7 @@ Current verified counts:
 
 - root tests: `115`
 - backend tests: `105`
-- Playwright E2E: `2`
+- Playwright E2E: `7`
 
 Covered areas include:
 
@@ -157,6 +168,7 @@ Covered areas include:
 - FAL execution safety
 - frontend backend-adapter polling
 - browser upload -> process -> download flow
+- landing route boundary with no `/api/session` bootstrap
 - trusted-proxy client IP extraction
 - Host/Origin boundary checks
 - session secret policy

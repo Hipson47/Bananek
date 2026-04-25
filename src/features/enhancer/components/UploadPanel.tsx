@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 
-import { validateImageFile } from "../features/enhancer/lib/validateImageFile";
+import { validateImageFile } from "../lib/validateImageFile";
 
 type UploadPanelProps = {
   file: File | null;

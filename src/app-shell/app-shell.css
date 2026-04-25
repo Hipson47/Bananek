@@ -1,0 +1,174 @@
+.product-app-shell {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 0 0 56px;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(240, 90, 40, 0.26) 0, transparent 24%),
+    radial-gradient(circle at 82% 0%, rgba(255, 250, 241, 0.1) 0, transparent 22%),
+    linear-gradient(180deg, var(--color-charcoal) 0%, #0d0c0b 48%, var(--color-charcoal-soft) 100%);
+  color: var(--color-paper-warm);
+}
+
+.product-app-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.8), transparent 82%);
+}
+
+.product-app-shell__grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.34;
+  background-image:
+    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.055) 0 1px, transparent 1px),
+    radial-gradient(circle at 70% 30%, rgba(240, 90, 40, 0.08) 0 1px, transparent 1px);
+  background-size: 38px 38px, 64px 64px;
+  mix-blend-mode: screen;
+}
+
+.app-topbar,
+.product-app-shell > .enhancer-tool,
+.product-app-shell > .not-found-page {
+  position: relative;
+  z-index: 1;
+}
+
+.app-topbar {
+  width: min(1400px, calc(100% - 48px));
+  min-height: 76px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: white;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.brand-mark__glyph {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background:
+    linear-gradient(135deg, transparent 43%, var(--color-accent) 44% 56%, transparent 57%),
+    var(--color-paper-warm);
+}
+
+.app-topbar__nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.app-topbar__nav a {
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: rgba(255, 255, 255, 0.68);
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.app-topbar__nav a:hover,
+.app-topbar__nav a:focus-visible,
+.app-topbar__nav a[aria-current="page"] {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.not-found-page {
+  width: min(960px, calc(100% - 48px));
+  min-height: calc(100vh - 140px);
+  margin: 0 auto;
+  display: grid;
+  align-content: center;
+  gap: 20px;
+}
+
+.not-found-page h1 {
+  max-width: 12ch;
+  margin: 0;
+  color: white;
+  font-family: var(--font-display);
+  font-size: clamp(3rem, 8vw, 7rem);
+  font-weight: 900;
+  line-height: 0.9;
+  text-transform: uppercase;
+}
+
+.primary-link {
+  width: fit-content;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-accent);
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: white;
+  padding: 12px 18px;
+  font-family: var(--font-display);
+  font-weight: 900;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition:
+    transform var(--duration-fast) var(--ease-out-expo),
+    opacity var(--duration-fast) var(--ease-out-expo);
+}
+
+.primary-link:hover,
+.primary-link:focus-visible {
+  transform: translateY(-2px);
+}
+
+@media (max-width: 720px) {
+  .app-topbar {
+    width: min(100% - 24px, 1400px);
+    min-height: 68px;
+    align-items: flex-start;
+    padding: 14px 0;
+  }
+
+  .brand-mark {
+    padding-top: 2px;
+  }
+
+  .app-topbar__nav a {
+    padding: 7px 8px;
+    font-size: 0.76rem;
+  }
+
+  .not-found-page {
+    width: min(100% - 24px, 960px);
+  }
+
+  .not-found-page h1 {
+    font-size: clamp(2.4rem, 11vw, 3.6rem);
+  }
+}

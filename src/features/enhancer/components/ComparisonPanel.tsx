@@ -1,4 +1,4 @@
-import type { EnhancementPreset, ProcessedImageResult } from "../features/enhancer/types";
+import type { EnhancementPreset, ProcessedImageResult } from "../types";
 
 type ComparisonPanelProps = {
   originalUrl: string;

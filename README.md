@@ -7,6 +7,8 @@ Automation-first product photo enhancement for e-commerce sellers.
 - `src/` is the active Vite + React + TypeScript customer app
 - `backend/` is the active Node.js + Hono + TypeScript API
 - the public product entrypoint is still `POST /api/enhance`
+- `/dawca` was a temporary donor reference for the cinematic landing and has
+  been removed after its needed motion/layout pieces were adopted into `src/`
 - the customer flow is still:
   - upload one photo
   - choose one preset
@@ -16,14 +18,15 @@ Automation-first product photo enhancement for e-commerce sellers.
 
 ## Active Runtime Path
 
-1. the browser boots a signed backend session via `GET /api/session`
-2. the frontend sends multipart upload + preset to `POST /api/enhance`
-3. when `PROCESSOR=fal`, backend enqueues a durable SQLite-backed job and returns `202`
-4. the frontend polls `GET /api/jobs/:jobId` through `BackendProcessor`
-5. the backend worker runs `analyze -> plan -> execute -> verify`
-6. output metadata is stored in SQLite
-7. output bytes are stored in the filesystem-backed object storage abstraction
-8. the browser renders and downloads the signed `/api/outputs/:outputId?...` result
+1. `/` serves the frontend-only cinematic marketing/story landing and does not call backend session APIs
+2. entering `/app` or `/app/enhance` boots a signed backend session via `GET /api/session`
+3. the frontend sends multipart upload + preset to `POST /api/enhance`
+4. when `PROCESSOR=fal`, backend enqueues a durable SQLite-backed job and returns `202`
+5. the frontend polls `GET /api/jobs/:jobId` through `BackendProcessor`
+6. the backend worker runs `analyze -> plan -> execute -> verify`
+7. output metadata is stored in SQLite
+8. output bytes are stored in the filesystem-backed object storage abstraction
+9. the browser renders and downloads the signed `/api/outputs/:outputId?...` result
 
 Sharp and mock modes still keep the same `/api/enhance` contract, but remain synchronous because they are cheap and deterministic.
 
@@ -56,20 +59,27 @@ Sharp and mock modes still keep the same `/api/enhance` contract, but remain syn
 
 ## Run
 
-Frontend:
+Frontend-only landing development:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Backend:
+This runs the cinematic `/` route without requiring the backend. The tool routes
+(`/app` and `/app/enhance`) intentionally need the backend because they create a
+session and call `/api/enhance`.
+
+Backend for full product flow:
 
 ```bash
 npm --prefix backend install
 cp backend/.env.example backend/.env
 npm --prefix backend run dev
 ```
+
+The Vite dev proxy forwards `/api/*` to the backend dev server on
+`http://localhost:3001`.
 
 ## Verify
 
@@ -94,7 +104,7 @@ Current verified counts:
 
 - root tests: `115`
 - backend tests: `105`
-- Playwright E2E: `2`
+- Playwright E2E: `7`
 
 ## Key Backend Environment Variables
 

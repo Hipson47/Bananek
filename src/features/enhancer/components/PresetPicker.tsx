@@ -1,4 +1,4 @@
-import type { EnhancementPreset } from "../features/enhancer/types";
+import type { EnhancementPreset } from "../types";
 
 type PresetPickerProps = {
   presets: EnhancementPreset[];

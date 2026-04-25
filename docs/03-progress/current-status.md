@@ -17,12 +17,19 @@ The repo is past advanced-MVP and now has a production-shaped local runtime:
 
 ## Active Milestone
 
-Backend freeze for this phase is complete. The next milestone is
-frontend-focused product development, not more backend architecture work.
+Backend freeze for this phase is complete. Frontend product structure is now
+split between a scroll-driven marketing/story UI and the real enhancement
+workspace.
 
 ## Current State
 
 - stable customer UX: upload -> preset -> process -> result -> download
+- frontend route split: `/` is the premium cinematic story-scroll landing,
+  `/app` and `/app/enhance` are the product tool
+- route boundary is explicit: `/` is frontend-only and does not bootstrap
+  `/api/session`; session creation starts inside the app/tool route
+- enhancer behavior remains owned by the existing frontend backend adapter and
+  preset-based workflow
 - stable public entrypoint: `POST /api/enhance`
 - OpenRouter remains planning-only
 - FAL remains the only image-generation backend
@@ -53,6 +60,20 @@ frontend-focused product development, not more backend architecture work.
 
 ## What Was Just Upgraded
 
+- frontend architecture: landing, app shell, shared styles/tokens/motion, and
+  enhancer feature boundaries are separated
+- app/tool routes now use a donor-inspired dark product shell instead of the
+  previous light standalone tool styling
+- donor `/dawca` scroll choreography was transplanted as product-owned Framer
+  Motion code: 1200vh sticky runway, donor timing windows, hero mask reveal,
+  horizontal work-track movement, clipped studio reveal, spring timeline draw,
+  final CTA scale/color scene, shortcut navigation, and namespaced landing CSS;
+  donor routing and portfolio content were not merged
+- `/dawca` was removed after the transplant; active code owns the landing,
+  shell, motion utilities, and styles
+
+## Previous Backend Freeze Upgrades
+
 - trusted-proxy / client IP policy: forwarded headers only trusted from
   explicitly configured proxy ranges (CIDR, exact IP, or "loopback")
 - session secret policy: strength + length + entropy + placeholder guard,
@@ -77,7 +98,8 @@ frontend-focused product development, not more backend architecture work.
 
 ## Exact Next Step
 
-1. stop backend feature work for this phase
-2. move to frontend-focused product development
+1. manually polish the landing/app responsive details against real browser
+   screenshots
+2. improve product copy, preview media, and result-state clarity
 3. defer auth/accounts, payments, Supabase, cloud object storage, distributed
    queueing, and external observability until they are actual launch blockers
