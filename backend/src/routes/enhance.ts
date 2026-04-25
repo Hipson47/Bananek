@@ -40,6 +40,12 @@ import {
 import { getCustomerProcessorLabel } from "../processors/customer-label.js";
 import { isAllowedHost, isAllowedOrigin } from "../security/request-trust.js";
 import { logError, logEvent } from "../utils/log.js";
+import {
+  OPS_EVENTS,
+  recordAbuseEvent,
+  recordJobLifecycle,
+  snapshotOpsCounters,
+} from "../utils/ops-metrics.js";
 import { signValue } from "../utils/signing.js";
 
 const PROCESSING_FAILURE_MESSAGE =
@@ -107,7 +113,7 @@ function rejectStateChangingRequestBoundary(c: Context<AppEnv>, config: AppConfi
   const host = c.req.header("host") ?? null;
 
   if (!isAllowedHost(host, config.allowedHosts)) {
-    logEvent("warn", "request.host_rejected", {
+    recordAbuseEvent(OPS_EVENTS.HOST_REJECTED, {
       requestId: c.get("requestId"),
       host,
       allowedHosts: config.allowedHosts,
@@ -123,7 +129,7 @@ function rejectStateChangingRequestBoundary(c: Context<AppEnv>, config: AppConfi
   }
 
   if (origin && !isAllowedOrigin(origin, config.allowedOrigins)) {
-    logEvent("warn", "request.origin_rejected", {
+    recordAbuseEvent(OPS_EVENTS.ORIGIN_REJECTED, {
       requestId: c.get("requestId"),
       origin,
       allowedOrigins: config.allowedOrigins,
@@ -146,6 +152,18 @@ export function createEnhanceRouter(config: AppConfig) {
 
   router.get("/health", (c) => c.json({ status: "ok" }));
 
+  router.get("/ops/counters", (c) => {
+    const host = c.req.header("host") ?? null;
+    if (!isAllowedHost(host, config.allowedHosts)) {
+      return c.json(
+        { error: { kind: "processing", message: "Request host is not allowed." } },
+        403,
+      );
+    }
+    c.header("Cache-Control", "no-store");
+    return c.json({ counters: snapshotOpsCounters() }, 200);
+  });
+
   router.get("/session", async (c) => {
     const requestId = c.get("requestId");
     const clientIp = c.get("clientIp");
@@ -156,7 +174,7 @@ export function createEnhanceRouter(config: AppConfig) {
     );
 
     if (!rateLimit) {
-      logEvent("warn", "rate_limit.rejected", {
+      recordAbuseEvent(OPS_EVENTS.RATE_LIMIT_REJECTED, {
         requestId,
         clientIp,
         route: "session-bootstrap",
@@ -340,7 +358,7 @@ export function createEnhanceRouter(config: AppConfig) {
     );
 
     if (!ipRateLimit || !sessionRateLimit) {
-      logEvent("warn", "rate_limit.rejected", {
+      recordAbuseEvent(OPS_EVENTS.RATE_LIMIT_REJECTED, {
         requestId,
         clientIp,
         sessionId: session.id,
@@ -455,7 +473,7 @@ export function createEnhanceRouter(config: AppConfig) {
 
         kickJobWorker(config);
 
-        logEvent("info", "enhance.job_queued", {
+        recordJobLifecycle(OPS_EVENTS.JOB_QUEUED, {
           requestId,
           jobId: job.id,
           sessionId: reservedSession.id,
@@ -494,6 +512,12 @@ export function createEnhanceRouter(config: AppConfig) {
     );
 
     if (!lockAcquired) {
+      recordAbuseEvent(OPS_EVENTS.SESSION_LOCK_CONTENDED, {
+        requestId,
+        sessionId: session.id,
+        clientIp,
+        presetId: parsedInput.presetId,
+      });
       return c.json(
         { error: { kind: "processing", message: "Only one enhancement can run at a time per session." } },
         409,

@@ -1,6 +1,8 @@
 # Code Review Summary — 2026-04-22
 
-> Historical audit snapshot from before the 2026-04-23 async-job and object-storage hardening pass. Treat this file as decision history, not current-state truth.
+> Historical audit snapshot from before the 2026-04-23 async-job/object-storage
+> hardening pass and the 2026-04-24 backend freeze. Treat this file as decision
+> history, not current-state truth.
 
 Current estimated score: **7.4/10**
 

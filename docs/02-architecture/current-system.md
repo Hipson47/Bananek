@@ -1,6 +1,6 @@
 # Current System — Verified Against Code
 
-> Last verified: 2026-04-23.
+> Last verified: 2026-04-24.
 
 ## What This Is
 
@@ -46,6 +46,7 @@ Orchestration
 - `POST /api/enhance`
 - `GET /api/jobs/:jobId`
 - `GET /api/outputs/:outputId`
+- `GET /api/ops/counters`
 
 ## Storage Model
 
@@ -126,6 +127,8 @@ Structured logs include:
 - processor path
 - retry/replan/fallback counts
 - verification outcome
+- trusted-proxy / boundary rejection events
+- worker shutdown/drain outcome
 
 SQLite telemetry rows store:
 
@@ -139,8 +142,8 @@ SQLite telemetry rows store:
 
 Current verified counts:
 
-- root tests: `91`
-- backend tests: `81`
+- root tests: `115`
+- backend tests: `105`
 - Playwright E2E: `2`
 
 Covered areas include:
@@ -154,6 +157,10 @@ Covered areas include:
 - FAL execution safety
 - frontend backend-adapter polling
 - browser upload -> process -> download flow
+- trusted-proxy client IP extraction
+- Host/Origin boundary checks
+- session secret policy
+- worker drain/requeue behavior
 
 ## What Does Not Exist
 

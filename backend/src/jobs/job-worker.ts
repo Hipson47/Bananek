@@ -4,7 +4,13 @@ import path from "node:path";
 import type { AppConfig } from "../config.js";
 import { getConfig } from "../config.js";
 import { orchestrateEnhancement } from "../orchestration/enhancement-orchestrator.js";
-import { logError, logEvent } from "../utils/log.js";
+import { logError } from "../utils/log.js";
+import {
+  OPS_EVENTS,
+  recordJobFailure,
+  recordJobLifecycle,
+  recordWorkerShutdownEvent,
+} from "../utils/ops-metrics.js";
 import { deleteStoredObject, readStoredObject, writeStoredObject } from "../storage/object-store.js";
 import { storeOutput } from "../storage/output-store.js";
 import { getConsistencyProfile, upsertConsistencyProfile } from "../storage/consistency-profile-store.js";
@@ -66,7 +72,7 @@ async function processClaimedJob(config: AppConfig): Promise<boolean> {
   activeJobId = job.id;
   const queueWaitMs = Math.max(0, Date.now() - Date.parse(job.createdAt));
 
-  logEvent("info", "job.claimed", {
+  recordJobLifecycle(OPS_EVENTS.JOB_CLAIMED, {
     requestId: job.requestId,
     jobId: job.id,
     sessionId: job.sessionId,
@@ -143,7 +149,7 @@ async function processClaimedJob(config: AppConfig): Promise<boolean> {
 
     await deleteStoredObject(job.inputObjectKey);
 
-    logEvent("info", "job.completed", {
+    recordJobLifecycle(OPS_EVENTS.JOB_COMPLETED, {
       requestId: job.requestId,
       jobId: job.id,
       sessionId: job.sessionId,
@@ -156,6 +162,7 @@ async function processClaimedJob(config: AppConfig): Promise<boolean> {
       replanCount: orchestrated.metadata.telemetry.replanCount,
       fallbackCount: orchestrated.metadata.telemetry.fallbackCount,
       verificationFailureCount: orchestrated.metadata.telemetry.verificationFailureCount,
+      verificationStatus: orchestrated.metadata.verification.status,
     });
   } catch (error) {
     const failedJob = await getEnhancementJob({
@@ -167,26 +174,53 @@ async function processClaimedJob(config: AppConfig): Promise<boolean> {
     const replanCount = failedJob?.replanCount ?? 0;
     const fallbackCount = failedJob?.fallbackCount ?? 0;
 
-    await markEnhancementJobFailed({
-      jobId: job.id,
-      errorKind: publicError.kind,
-      errorMessage: publicError.message,
-      retryCount,
-      replanCount,
-      fallbackCount,
-      telemetrySummary: summarizeTelemetry({
-        nodeMetrics: [],
+    try {
+      await markEnhancementJobFailed({
+        jobId: job.id,
+        errorKind: publicError.kind,
+        errorMessage: publicError.message,
         retryCount,
         replanCount,
         fallbackCount,
-        verificationFailureCount: 0,
-        finalOutcomeClass: "failed",
-      }),
-      outcomeClass: "failed",
-    });
-    await refundSessionCredit(job.sessionId, job.requestId, "job_failed");
-    await deleteStoredObject(job.inputObjectKey);
-    logError("job.failed", error, {
+        telemetrySummary: summarizeTelemetry({
+          nodeMetrics: [],
+          retryCount,
+          replanCount,
+          fallbackCount,
+          verificationFailureCount: 0,
+          finalOutcomeClass: "failed",
+        }),
+        outcomeClass: "failed",
+      });
+    } catch (markFailure) {
+      logError("job.mark_failed_error", markFailure, {
+        requestId: job.requestId,
+        jobId: job.id,
+        sessionId: job.sessionId,
+      });
+    }
+
+    try {
+      await refundSessionCredit(job.sessionId, job.requestId, "job_failed");
+    } catch (refundFailure) {
+      logError("job.refund_error", refundFailure, {
+        requestId: job.requestId,
+        jobId: job.id,
+        sessionId: job.sessionId,
+      });
+    }
+
+    try {
+      await deleteStoredObject(job.inputObjectKey);
+    } catch (deleteFailure) {
+      logError("job.input_delete_error", deleteFailure, {
+        requestId: job.requestId,
+        jobId: job.id,
+        sessionId: job.sessionId,
+      });
+    }
+
+    recordJobFailure(error, {
       requestId: job.requestId,
       jobId: job.id,
       sessionId: job.sessionId,
@@ -229,8 +263,9 @@ export function kickJobWorker(config = getConfig()): void {
 export async function prepareJobWorkerForStartup(): Promise<void> {
   const requeuedJobs = await requeueRunningJobs();
   if (requeuedJobs > 0) {
-    logEvent("warn", "job.requeued_on_startup", {
+    recordJobLifecycle(OPS_EVENTS.JOB_REQUEUED, {
       requeuedJobs,
+      source: "startup",
     });
   }
 }
@@ -256,22 +291,32 @@ export function stopJobWorkerLoop(): void {
   workerTimer = null;
 }
 
+export function isJobWorkerShuttingDown(): boolean {
+  return workerShuttingDown;
+}
+
+export function getActiveJobId(): string | null {
+  return activeJobId;
+}
+
 export async function shutdownJobWorker(args: {
   drainTimeoutMs: number;
 }): Promise<{ drained: boolean; activeJobId: string | null }> {
   workerShuttingDown = true;
   stopJobWorkerLoop();
 
-  logEvent("info", "job_worker.shutdown_started", {
+  const startedAt = Date.now();
+  recordWorkerShutdownEvent(OPS_EVENTS.WORKER_SHUTDOWN_STARTED, {
     activeJobId,
     workerRunning,
     drainTimeoutMs: args.drainTimeoutMs,
   });
 
   if (!activeRunPromise) {
-    logEvent("info", "job_worker.shutdown_completed", {
+    recordWorkerShutdownEvent(OPS_EVENTS.WORKER_SHUTDOWN_COMPLETED, {
       activeJobId: null,
       drained: true,
+      drainDurationMs: Date.now() - startedAt,
     });
     return { drained: true, activeJobId: null };
   }
@@ -286,20 +331,21 @@ export async function shutdownJobWorker(args: {
 
   if (timedOut) {
     const releasedJobs = await requeueRunningJobs();
-    logEvent("warn", "job_worker.shutdown_timed_out", {
+    recordWorkerShutdownEvent(OPS_EVENTS.WORKER_SHUTDOWN_TIMED_OUT, {
       activeJobId,
       releasedJobs,
+      drainDurationMs: Date.now() - startedAt,
     });
     return { drained: false, activeJobId };
   }
 
-  logEvent("info", "job_worker.shutdown_completed", {
+  recordWorkerShutdownEvent(OPS_EVENTS.WORKER_SHUTDOWN_COMPLETED, {
     activeJobId: null,
     drained: true,
+    drainDurationMs: Date.now() - startedAt,
   });
   return { drained: true, activeJobId: null };
 }
-
 export function resetJobWorkerForTests(): void {
   stopJobWorkerLoop();
   workerRunning = false;

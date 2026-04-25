@@ -14,6 +14,8 @@ Keep the existing automation-first enhancement system stable while shifting the 
 - output bytes are stored in filesystem-backed object storage
 - consistency profiles are persisted per `session + preset`
 - final verification is authoritative
+- Host/Origin checks, trusted-proxy IP extraction, strong session-secret policy,
+  and worker drain/requeue behavior are implemented
 - frontend polling is hidden inside `BackendProcessor`
 
 ## Constraints
@@ -35,15 +37,16 @@ Keep the existing automation-first enhancement system stable while shifting the 
 
 ## Current Test Baseline
 
-- root tests: `91`
-- backend tests: `81`
+- root tests: `115`
+- backend tests: `105`
 - Playwright E2E: `2`
 
 ## Next Exact Milestone
 
-Launch readiness:
+Frontend-focused product development. Backend-only launch infrastructure remains
+deferred on purpose:
 
 1. auth/account boundary
 2. paid credits
 3. cloud storage swap
-4. external observability and graceful shutdown
+4. external observability

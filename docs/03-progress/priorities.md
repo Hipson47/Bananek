@@ -1,7 +1,7 @@
 # Priorities — What To Build Next
 
-1. real auth/accounts
-2. purchased credits / payments
-3. cloud object storage behind the existing storage abstraction
-4. external observability and graceful shutdown / worker drain handling
-5. deployment/runtime manifests for production
+1. frontend-focused product polish and conversion flow
+2. UX copy, result preview quality, and failure-state clarity
+3. real auth/accounts before paid launch
+4. purchased credits / payments after account ownership exists
+5. cloud object storage, external observability, and deployment manifests before multi-user production

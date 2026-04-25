@@ -1,6 +1,6 @@
 # AI Context — Session Handoff File
 
-> Last updated: 2026-04-23.
+> Last updated: 2026-04-24.
 
 ## Repo Reality
 
@@ -16,6 +16,7 @@
 - `GET /api/jobs/:jobId`
 - `GET /api/outputs/:outputId`
 - `GET /api/health`
+- `GET /api/ops/counters`
 
 ## Processor Reality
 
@@ -37,6 +38,10 @@ SQLite persists:
 - consistency profiles
 - telemetry rows
 - output metadata
+
+The backend also enforces Host/Origin boundaries on state-changing routes,
+trusts forwarded IP headers only from configured trusted proxies, and drains or
+requeues active jobs during graceful shutdown.
 
 Filesystem object storage persists:
 
@@ -65,8 +70,8 @@ Properties:
 
 ## Test / Verify Snapshot
 
-- root tests: `91`
-- backend tests: `81`
+- root tests: `115`
+- backend tests: `105`
 - Playwright E2E: `2`
 - frontend build: passing
 - backend build: passing
@@ -79,3 +84,8 @@ Properties:
 - no cloud object storage
 - no distributed workers
 - no external metrics/tracing/alerts
+
+## Current Phase Recommendation
+
+Backend is freeze-ready for this phase. Stop backend feature work and move to
+frontend-focused development unless a real backend defect is found.

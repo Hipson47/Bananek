@@ -82,16 +82,23 @@ function validateSessionSecret(secret: string): string {
   const lowered = trimmed.toLowerCase();
   const uniqueCharacters = new Set(trimmed).size;
 
-  if (trimmed.length < 32) {
-    throw new Error("APP_SESSION_SECRET must be at least 32 characters long.");
-  }
-
+  // Check placeholder BEFORE length so copy-pasted defaults fail with a
+  // descriptive error even when they happen to be short.
   if (
     lowered.includes("change-me")
+    || lowered.includes("changeme")
     || lowered.includes("example")
+    || lowered.includes("placeholder")
+    || lowered.includes("insecure")
     || lowered === "test-secret"
+    || lowered === "development-secret"
+    || lowered === "your-secret-here"
   ) {
     throw new Error("APP_SESSION_SECRET uses a placeholder value. Set a real secret.");
+  }
+
+  if (trimmed.length < 32) {
+    throw new Error("APP_SESSION_SECRET must be at least 32 characters long.");
   }
 
   if (uniqueCharacters < 10) {

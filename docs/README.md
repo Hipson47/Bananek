@@ -26,6 +26,8 @@ Read [AI_CONTEXT.md](../AI_CONTEXT.md) first.
 
 ## Audits
 
+- [audits/backend-freeze-report.md](audits/backend-freeze-report.md): current backend freeze decision for this phase
+- [audits/backend-freeze-summary.md](audits/backend-freeze-summary.md): compact backend freeze checklist and next action
 - [audits/latest-code-review.md](audits/latest-code-review.md): historical audit snapshot from before the async-job/object-storage hardening pass
 - [audits/latest-code-review-summary.md](audits/latest-code-review-summary.md): compact historical summary of that same audit
 

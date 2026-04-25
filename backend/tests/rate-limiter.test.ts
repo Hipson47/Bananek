@@ -12,7 +12,6 @@ afterEach(() => {
 describe("rate limiter", () => {
   it("does not delete unrelated expired buckets inline on the hot path", () => {
     configureDatabase("backend/data/test-runtime.sqlite");
-    const now = Date.now();
 
     consumeRateLimit("expired-bucket", 1, -1);
     consumeRateLimit("active-bucket", 5, 60_000);
@@ -23,7 +22,7 @@ describe("rate limiter", () => {
 
     expect(result).not.toBeNull();
     expect(countBeforeCleanup.count).toBe(3);
-    expect(cleanupExpiredRateLimits(now)).toBeGreaterThanOrEqual(1);
+    expect(cleanupExpiredRateLimits(Date.now())).toBeGreaterThanOrEqual(1);
   });
 
   it("resets an expired bucket correctly without requiring inline cleanup", async () => {

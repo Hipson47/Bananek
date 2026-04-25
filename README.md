@@ -92,14 +92,16 @@ TMPDIR=/tmp npm run verify
 
 Current verified counts:
 
-- root tests: `91`
-- backend tests: `81`
+- root tests: `115`
+- backend tests: `105`
 - Playwright E2E: `2`
 
 ## Key Backend Environment Variables
 
-- `APP_SESSION_SECRET`: required in production; local dev uses a generated secret file when this is omitted
+- `APP_SESSION_SECRET`: required in production; local dev can use a generated secret file only when `ALLOW_GENERATED_DEV_SESSION_SECRET=true`
 - `LOCAL_DEV_SESSION_SECRET_PATH`: path for the generated local-dev secret file
+- `ALLOWED_HOSTS`: accepted backend host headers
+- `TRUSTED_PROXY_RANGES`: trusted proxy peers allowed to supply forwarded client IP headers
 - `DATABASE_PATH`: SQLite runtime database path
 - `OBJECT_STORAGE_PATH`: filesystem-backed object storage root
 - `PROCESSOR`: `sharp`, `fal`, or `mock`
@@ -117,7 +119,8 @@ Current verified counts:
 - FAL integration behind `/api/enhance`: complete
 - adaptive orchestration: complete
 - durability + async job hardening: complete
-- next milestone: payments/auth + cloud object storage + external observability
+- backend freeze for this phase: complete
+- next milestone: frontend-focused product development; auth/payments/cloud ops remain deferred
 
 ## Docs
 

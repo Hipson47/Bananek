@@ -48,7 +48,7 @@ export function createApp(explicitConfig?: AppConfig) {
     try {
       remoteAddress = getConnInfo(c).remote.address ?? null;
     } catch {
-      remoteAddress = c.env.incoming?.socket.remoteAddress ?? null;
+      remoteAddress = c.env?.incoming?.socket?.remoteAddress ?? null;
     }
 
     c.set("requestId", requestId);

@@ -1,13 +1,13 @@
 # Known Gaps — Code Verified
 
-> Verified against the repo on 2026-04-23.
+> Verified against the repo on 2026-04-24.
 
 ## Security
 
 | Gap | Risk | Next action |
 |---|---|---|
 | Anonymous session model only | No real user/account ownership | Add auth/accounts before paid launch |
-| No CSRF protection beyond same-site cookie posture | Cross-site abuse risk on authenticated browsers | Add Origin validation and CSRF strategy |
+| No full CSRF token system | Browser boundary currently relies on same-site cookies, `X-Session-Id`, and Host/Origin checks | Add token-based CSRF only when auth/account sessions are introduced |
 | No TLS enforcement in repo | Cookies unsafe without proper deployment | Terminate TLS in front of the app |
 
 ## Architecture
@@ -16,7 +16,7 @@
 |---|---|---|
 | Filesystem object storage is still single-node | No multi-instance delivery path | Swap storage adapter to S3/R2 |
 | SQLite + in-process worker is still single-node | No horizontal job scaling | Introduce external queue / worker topology |
-| No graceful shutdown drain logic | In-flight jobs/requests may be interrupted on deploy | Add shutdown handling to API + worker loop |
+| Graceful shutdown is single-node only | Process shutdown drains or requeues one local worker, but does not coordinate multiple nodes | Add external queue / worker topology before multi-instance deployment |
 
 ## Operations
 

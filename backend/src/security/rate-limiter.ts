@@ -1,4 +1,5 @@
 import { getDatabase } from "../storage/database.js";
+import { logEvent } from "../utils/log.js";
 
 type RateLimitResult = {
   remaining: number;
@@ -65,5 +66,15 @@ export function clearRateLimits(): void {
 export function cleanupExpiredRateLimits(nowMs = Date.now()): number {
   const db = getDatabase();
   const result = db.prepare("DELETE FROM rate_limits WHERE reset_at <= ?").run(nowMs);
-  return result.changes;
+  const removed = Number(result.changes ?? 0);
+
+  if (removed > 0) {
+    logEvent("info", "rate_limit.cleanup", {
+      removed,
+      at: nowMs,
+      source: "maintenance",
+    });
+  }
+
+  return removed;
 }

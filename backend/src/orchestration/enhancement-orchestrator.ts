@@ -1,5 +1,10 @@
 import { getConfig } from "../config.js";
 import { logError, logEvent } from "../utils/log.js";
+import {
+  OPS_EVENTS,
+  recordOrchestrationCounter,
+  recordVerificationOutcome,
+} from "../utils/ops-metrics.js";
 import { processImage as mockProcessImage } from "../processors/mock-processor.js";
 import { processImage as sharpProcessImage } from "../processors/sharp-processor.js";
 import { processImage as falProcessImage } from "../processors/fal-processor.js";
@@ -315,6 +320,12 @@ async function executeFalWithGraph(args: {
 
     if (!verificationState.heuristicVerification.passed) {
       verificationFailureCount += 1;
+      recordVerificationOutcome("failed", {
+        requestId: args.requestId,
+        presetId: args.presetId,
+        score: verificationState.heuristicVerification.score,
+        attempt: "initial",
+      });
       failedAttempts.push(summarizeFailedAttempt({
         plan: activePlan,
         verification: verificationState.heuristicVerification,
@@ -335,6 +346,11 @@ async function executeFalWithGraph(args: {
         }
         retryApplied = true;
         replanCount += 1;
+        recordOrchestrationCounter(OPS_EVENTS.ORCHESTRATION_REPLAN, {
+          requestId: args.requestId,
+          presetId: args.presetId,
+          candidateId: alternateCandidate.id,
+        });
         activePlan = buildEnhancementPlan({
           presetId: args.presetId,
           originalMimeType: args.originalMimeType,
@@ -390,6 +406,11 @@ async function executeFalWithGraph(args: {
           throw buildQualityVerificationError();
         }
         retryApplied = true;
+        recordOrchestrationCounter(OPS_EVENTS.ORCHESTRATION_RETRY, {
+          requestId: args.requestId,
+          presetId: args.presetId,
+          strategy: activePlan.selectedCandidateId ?? activePlan.strategy,
+        });
         attemptedStrategies.push(`${activePlan.selectedCandidateId ?? activePlan.strategy}-retry`);
         promptPackage = await buildPromptPackageForPlan(
           activePlan,
@@ -445,6 +466,11 @@ async function executeFalWithGraph(args: {
         && !attemptedStrategies.includes("sharp-only")
       ) {
         fallbackApplied = true;
+        recordOrchestrationCounter(OPS_EVENTS.ORCHESTRATION_FALLBACK, {
+          requestId: args.requestId,
+          presetId: args.presetId,
+          fallbackStrategy: "sharp-only",
+        });
         activePlan = buildEnhancementPlan({
           presetId: args.presetId,
           originalMimeType: args.originalMimeType,
@@ -825,6 +851,12 @@ export async function orchestrateEnhancement(input: OrchestratorInput): Promise<
   if (!verification.passed) {
     throw buildQualityVerificationError();
   }
+
+  recordVerificationOutcome("passed", {
+    requestId: input.requestId,
+    presetId: input.presetId,
+    score: verification.score,
+  });
 
   logEvent("info", "orchestrator.completed", {
     requestId: input.requestId,

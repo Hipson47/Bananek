@@ -1,6 +1,9 @@
 # Code Review Audit — 2026-04-22
 
-> Historical audit snapshot from before the 2026-04-23 async-job and object-storage hardening pass. Use current code, tests, and `docs/03-progress/current-status.md` for present-state truth.
+> Historical audit snapshot from before the 2026-04-23 async-job/object-storage
+> hardening pass and the 2026-04-24 backend freeze. Use current code, tests,
+> `docs/03-progress/current-status.md`, and
+> `docs/audits/backend-freeze-report.md` for present-state truth.
 
 Scope: current working tree, active runtime paths, tests, configs, env usage, docs vs implementation.
 
