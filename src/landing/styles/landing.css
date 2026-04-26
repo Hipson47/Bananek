@@ -1,6 +1,7 @@
 .cinematic-landing-wrapper {
   position: relative;
   height: 1200vh;
+  isolation: isolate;
   background-color: var(--color-charcoal);
   color: var(--color-paper-warm);
   --cinematic-text-primary: #ffffff;
@@ -14,6 +15,7 @@
   top: 0;
   width: 100%;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background-color: var(--color-charcoal);
 }
@@ -27,9 +29,9 @@
 
 .cinematic-container {
   width: 100%;
-  max-width: 1400px;
+  max-width: var(--max-width);
   margin: 0 auto;
-  padding: 0 4vw;
+  padding: 0 var(--gutter);
 }
 
 .cinematic-section-title {
@@ -47,18 +49,19 @@
 
 .cinematic-nav {
   position: absolute;
-  z-index: 80;
+  z-index: var(--z-nav);
   top: 0;
   left: 0;
   right: 0;
-  min-height: 72px;
+  min-height: var(--nav-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 18px 4vw;
+  padding: 18px var(--gutter);
   color: white;
   pointer-events: auto;
+  background: linear-gradient(180deg, rgba(8, 8, 7, 0.72), rgba(8, 8, 7, 0));
 }
 
 .cinematic-brand,
@@ -70,8 +73,11 @@
 .cinematic-brand {
   gap: 10px;
   color: white;
+  font-family: var(--font-display);
   font-weight: 900;
+  letter-spacing: 0.01em;
   text-decoration: none;
+  text-transform: uppercase;
 }
 
 .cinematic-brand__mark {
@@ -87,6 +93,7 @@
   gap: 6px;
   justify-content: flex-end;
   flex-wrap: wrap;
+  max-width: min(760px, 70vw);
 }
 
 .cinematic-nav__links button {
@@ -99,6 +106,7 @@
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .cinematic-nav__links button[aria-current="step"],
@@ -142,6 +150,7 @@
   z-index: var(--z-hero);
   mix-blend-mode: difference;
   padding-bottom: 2rem;
+  width: min(94vw, 1400px);
 }
 
 .cinematic-hero__titles h1,
@@ -152,7 +161,7 @@
   font-weight: 800;
   line-height: 1;
   text-transform: uppercase;
-  white-space: nowrap;
+  white-space: normal;
   color: white;
 }
 
@@ -194,7 +203,7 @@
 
 .cinematic-floating-cta {
   position: absolute;
-  bottom: 4rem;
+  bottom: clamp(2rem, 7vh, 4rem);
   z-index: 3;
   border-radius: 4px;
   background: var(--color-charcoal);
@@ -205,6 +214,7 @@
   text-decoration: none;
   text-transform: uppercase;
   pointer-events: auto;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.22);
 }
 
 .cinematic-work {
@@ -218,7 +228,7 @@
   flex-direction: column;
   justify-content: center;
   height: 100%;
-  padding-top: 6rem;
+  padding-top: var(--nav-height);
 }
 
 .cinematic-work__content h2 {
@@ -228,8 +238,8 @@
 
 .cinematic-work__track {
   position: relative;
-  width: 100vw;
-  height: 60vh;
+  width: 100%;
+  height: min(58vh, 620px);
   overflow: hidden;
   display: flex;
   align-items: center;
@@ -237,14 +247,14 @@
 
 .cinematic-work__scroll-container {
   display: flex;
-  gap: 4rem;
+  gap: clamp(1.25rem, 4vw, 4rem);
   padding: 0 10vw;
-  width: 300vw;
+  width: max-content;
 }
 
 .cinematic-work__card {
-  width: 50vw;
-  height: 50vh;
+  width: clamp(320px, 50vw, 720px);
+  height: min(50vh, 560px);
   background-color: var(--color-charcoal);
   border: 1px solid var(--cinematic-border);
   display: flex;
@@ -316,7 +326,7 @@
 .cinematic-about {
   flex-direction: column;
   justify-content: flex-start;
-  padding-top: 20vh;
+  padding-top: var(--nav-height);
   background-color: var(--color-charcoal);
 }
 
@@ -329,8 +339,8 @@
 
 .cinematic-about__grid {
   display: grid;
-  grid-template-columns: 1.5fr 1fr;
-  gap: 4rem;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.9fr);
+  gap: clamp(2rem, 5vw, 4rem);
   align-items: center;
   width: 100%;
 }
@@ -347,16 +357,17 @@
 }
 
 .cinematic-about__text p {
-  max-width: 48ch;
+  max-width: 34ch;
   margin: 0;
-  font-size: clamp(1.2rem, 2vw, 1.8rem);
+  font-size: clamp(1.1rem, 1.7vw, 1.45rem);
   font-weight: 300;
   color: white;
-  line-height: 1.5;
+  line-height: 1.35;
 }
 
 .cinematic-about__portrait {
   aspect-ratio: 3 / 4;
+  max-height: min(64vh, 680px);
   background:
     radial-gradient(circle at 44% 28%, rgba(255, 255, 255, 0.7), transparent 13%),
     linear-gradient(145deg, #f3d6a8, #d9904b 56%, #453127);
@@ -401,7 +412,7 @@
 .cinematic-process {
   flex-direction: column;
   justify-content: flex-start;
-  padding-top: 15vh;
+  padding-top: calc(var(--nav-height) + 4vh);
   background-color: var(--color-charcoal-soft);
 }
 
@@ -424,7 +435,7 @@
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  height: 50vh;
+  height: min(50vh, 520px);
 }
 
 .cinematic-timeline__line {
@@ -477,11 +488,12 @@
   justify-content: center;
   position: relative;
   overflow: hidden;
+  padding: var(--nav-height) var(--gutter) 0;
 }
 
 .cinematic-contact h2 {
   margin: 0;
-  font-size: 15vw;
+  font-size: clamp(4.2rem, 15vw, 15rem);
   font-weight: 950;
   white-space: nowrap;
   font-family: var(--font-display);
@@ -523,68 +535,96 @@
 
 @media (max-width: 768px) {
   .cinematic-nav {
-    align-items: flex-start;
-    padding: 14px 12px;
+    align-items: center;
+    gap: 10px;
+    min-height: auto;
+    padding: 12px;
+    background: rgba(8, 8, 7, 0.9);
+    backdrop-filter: blur(18px);
   }
 
   .cinematic-brand {
     flex-shrink: 0;
+    font-size: 0.9rem;
   }
 
   .cinematic-nav__links {
+    max-width: min(70vw, 520px);
     justify-content: flex-end;
     gap: 2px;
   }
 
   .cinematic-nav__links button {
-    padding: 6px;
-    font-size: 0.72rem;
+    padding: 5px 6px;
+    font-size: 0.68rem;
   }
 
   .cinematic-hero__titles h1,
   .cinematic-hero__accent {
-    font-size: clamp(3rem, 16vw, 5rem);
+    font-size: clamp(2.8rem, 13vw, 5rem);
+    line-height: 0.95;
+  }
+
+  .cinematic-hero__accent {
+    font-size: clamp(2.35rem, 10vw, 4.2rem);
   }
 
   .cinematic-floating-cta {
-    bottom: 2rem;
+    right: 12px;
+    bottom: 16px;
+    left: 12px;
+    justify-content: center;
+    text-align: center;
   }
 
   .cinematic-work__content h2 {
-    font-size: clamp(2.8rem, 15vw, 5rem);
+    margin-bottom: 1.75rem;
+    font-size: clamp(2.7rem, 14vw, 5rem);
+  }
+
+  .cinematic-work__track {
+    height: 52vh;
+  }
+
+  .cinematic-work__scroll-container {
+    padding: 0 6vw;
   }
 
   .cinematic-work__card {
-    width: 80vw;
-    height: 40vh;
+    width: 82vw;
+    height: 38vh;
   }
 
   .cinematic-work__card p {
-    font-size: 2rem;
+    font-size: clamp(1.8rem, 9vw, 2.8rem);
   }
 
   .cinematic-about__grid {
     grid-template-columns: 1fr;
-    gap: 2rem;
+    gap: 1.25rem;
   }
 
   .cinematic-about__heading {
-    font-size: clamp(2.8rem, 15vw, 5rem);
+    font-size: clamp(2.7rem, 13vw, 4.8rem);
   }
 
   .cinematic-about__text p {
-    font-size: 1.05rem;
+    font-size: 1rem;
   }
 
   .cinematic-about__portrait {
-    max-height: 42vh;
+    width: min(72vw, 320px);
+    max-height: 34vh;
+    margin: 0 auto;
   }
 
   .cinematic-process__heading {
-    font-size: clamp(2.8rem, 15vw, 5rem);
+    margin-bottom: 2rem;
+    font-size: clamp(2.5rem, 12vw, 4.6rem);
   }
 
   .cinematic-timeline {
+    height: 42vh;
     padding-left: 3rem;
   }
 
@@ -601,5 +641,30 @@
   .cinematic-contact__cta {
     bottom: 2rem;
     padding: 1rem 2rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .cinematic-brand span:last-child {
+    display: none;
+  }
+
+  .cinematic-nav__links {
+    max-width: calc(100vw - 64px);
+  }
+
+  .cinematic-nav__links button {
+    font-size: 0.62rem;
+    letter-spacing: 0.02em;
+    padding: 5px;
+  }
+
+  .cinematic-hero__titles {
+    padding-bottom: 4rem;
+  }
+
+  .cinematic-contact h2 {
+    white-space: normal;
+    text-align: center;
   }
 }

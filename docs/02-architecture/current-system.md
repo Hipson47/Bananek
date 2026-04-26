@@ -155,7 +155,7 @@ Current verified counts:
 
 - root tests: `115`
 - backend tests: `105`
-- Playwright E2E: `7`
+- Playwright E2E: `10`
 
 Covered areas include:
 
@@ -169,6 +169,8 @@ Covered areas include:
 - frontend backend-adapter polling
 - browser upload -> process -> download flow
 - landing route boundary with no `/api/session` bootstrap
+- landing visual smoke coverage for horizontal overflow and mobile heading clipping
+- app-shell structure coverage for `/app/enhance`
 - trusted-proxy client IP extraction
 - Host/Origin boundary checks
 - session secret policy

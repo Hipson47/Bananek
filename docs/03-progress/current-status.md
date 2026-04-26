@@ -64,6 +64,10 @@ workspace.
   enhancer feature boundaries are separated
 - app/tool routes now use a donor-inspired dark product shell instead of the
   previous light standalone tool styling
+- frontend visual repair: Space Grotesk / Inter font loading is explicit,
+  route-level overflow containment preserves sticky scroll behavior, and E2E
+  now covers landing horizontal overflow, mobile heading clipping, and app shell
+  structure
 - donor `/dawca` scroll choreography was transplanted as product-owned Framer
   Motion code: 1200vh sticky runway, donor timing windows, hero mask reveal,
   horizontal work-track movement, clipped studio reveal, spring timeline draw,

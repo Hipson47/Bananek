@@ -113,7 +113,7 @@ export function MarketplaceScene({ scrollYProgress }: SceneProps) {
   const trOut = CINEMATIC_TIMING.work.out;
 
   const opacity = useTransform(scrollYProgress, [0, trStart, trReady, trExit, trOut, 1], [0, 0, 1, 1, 0, 0]);
-  const xMovement = useTransform(scrollYProgress, [0, trReady, trExit, 1], ["20vw", "20vw", "-200vw", "-200vw"]);
+  const xMovement = useTransform(scrollYProgress, [0, trReady, trExit, 1], ["20vw", "20vw", "-110vw", "-110vw"]);
   const titleX = useTransform(scrollYProgress, [0, trStart, trReady + 0.04, 1], ["-100%", "-100%", "0%", "0%"]);
 
   return (
@@ -210,8 +210,7 @@ export function StudioScene({ scrollYProgress }: SceneProps) {
               Studio Polish
             </h2>
             <p>
-              Lighting, contrast, and premium catalog depth move a flat photo into
-              a storefront image that feels intentionally produced.
+              Lighting and contrast tuned for a catalog-ready frame.
             </p>
             <a className="cinematic-inline-cta" href="/app/enhance">
               Open enhancer

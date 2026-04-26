@@ -39,7 +39,7 @@ Keep the existing automation-first enhancement system stable while shifting the 
 
 - root tests: `115`
 - backend tests: `105`
-- Playwright E2E: `2`
+- Playwright E2E: `10`
 
 ## Next Exact Milestone
 

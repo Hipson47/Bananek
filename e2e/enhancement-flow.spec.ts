@@ -85,6 +85,53 @@ test("landing mode shortcuts update the active story chapter", async ({ page }) 
   await expect(page.getByRole("heading", { name: "Marketplace Ready" })).toBeVisible();
 });
 
+test("landing visual structure stays inside desktop viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+
+  await expect(page.locator(".cinematic-landing-wrapper")).toBeVisible();
+  await expect(page.locator(".cinematic-nav")).toBeVisible();
+  await expect(page.locator(".cinematic-progress-bar")).toHaveCount(1);
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth + 2,
+  );
+  expect(hasHorizontalOverflow).toBe(false);
+
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight * 0.36));
+  await page.waitForTimeout(100);
+
+  const hasScrolledHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > window.innerWidth + 2,
+  );
+  expect(hasScrolledHorizontalOverflow).toBe(false);
+});
+
+test("mobile landing keeps the primary heading readable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight * 0.06));
+  await page.waitForTimeout(100);
+
+  const heading = page.getByRole("heading", { name: "Product Photo" });
+  await expect(heading).toBeVisible();
+
+  const box = await heading.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(-2);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(392);
+});
+
+test("app route uses the premium product shell", async ({ page }) => {
+  await page.goto("/app/enhance");
+
+  await expect(page.locator(".product-app-shell")).toBeVisible();
+  await expect(page.locator(".app-topbar")).toBeVisible();
+  await expect(page.locator(".enhancer-tool")).toBeVisible();
+  await expect(page.locator(".panel").first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /Story/i })).toBeVisible();
+});
+
 test("landing CTA opens the enhancer tool", async ({ page }) => {
   await page.goto("/");
 

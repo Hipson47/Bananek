@@ -149,9 +149,14 @@ export function EnhancerTool() {
   return (
     <section className="enhancer-tool" aria-labelledby="enhancer-title">
       <div className="enhancer-intro">
-        <p className="section-kicker">Product enhancer</p>
-        <h1 id="enhancer-title">Create a cleaner listing image.</h1>
-        <p>{helperCopy}</p>
+        <div className="enhancer-intro__title">
+          <p className="section-kicker">Product enhancer</p>
+          <h1 id="enhancer-title">Create a cleaner listing image.</h1>
+        </div>
+        <div className="enhancer-intro__note">
+          <span>Live workspace</span>
+          <p>{helperCopy}</p>
+        </div>
       </div>
 
       <section className="workspace" aria-label="Enhancement workspace">

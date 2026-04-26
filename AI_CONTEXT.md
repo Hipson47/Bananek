@@ -81,7 +81,7 @@ Properties:
 
 - root tests: `115`
 - backend tests: `105`
-- Playwright E2E: `7`
+- Playwright E2E: `10`
 - frontend build: passing
 - backend build: passing
 - `npm run verify`: passing

@@ -36,3 +36,6 @@
 - Placeholder demo visuals stay inside the donor-style scroll-controlled scene system.
 - Donor z-index tokens are now part of the active shared tokens so chapter
   layers, progress bar, and shortcut navigation resolve consistently.
+- Global horizontal overflow rules are not applied to landing ancestors because
+  they break CSS sticky positioning; overflow is contained inside the cinematic
+  viewport, work track, and app shell instead.

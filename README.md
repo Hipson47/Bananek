@@ -104,7 +104,7 @@ Current verified counts:
 
 - root tests: `115`
 - backend tests: `105`
-- Playwright E2E: `7`
+- Playwright E2E: `10`
 
 ## Key Backend Environment Variables
 
